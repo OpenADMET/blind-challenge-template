@@ -1,0 +1,193 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "StateBucketAccess",
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket"
+            ],
+            "Resource": "arn:aws:s3:::${STATE_BUCKET}"
+        },
+        {
+            "Sid": "StateObjectAccess",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject"
+            ],
+            "Resource": "arn:aws:s3:::${STATE_BUCKET}/*"
+        },
+        {
+            "Sid": "LockTableAccess",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:DescribeTable",
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:UpdateItem"
+            ],
+            "Resource": "arn:aws:dynamodb:${AWS_REGION}:${AWS_ACCOUNT_ID}:table/${LOCK_TABLE}"
+        },
+        {
+            "Sid": "EcrAuth",
+            "Effect": "Allow",
+            "Action": [
+                "ecr:GetAuthorizationToken"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "EcrRepoPushPull",
+            "Effect": "Allow",
+            "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:BatchGetImage",
+                "ecr:CompleteLayerUpload",
+                "ecr:CreateRepository",
+                "ecr:DeleteRepository",
+                "ecr:DeleteLifecyclePolicy",
+                "ecr:DeleteRepositoryPolicy",
+                "ecr:DescribeImages",
+                "ecr:DescribeRepositories",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:GetLifecyclePolicy",
+                "ecr:ListTagsForResource",
+                "ecr:GetRepositoryPolicy",
+                "ecr:InitiateLayerUpload",
+                "ecr:PutImage",
+                "ecr:PutLifecyclePolicy",
+                "ecr:SetRepositoryPolicy",
+                "ecr:TagResource",
+                "ecr:UntagResource",
+                "ecr:UploadLayerPart"
+            ],
+            "Resource": "arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${CHALLENGE_NAME}-lambda"
+        },
+        {
+            "Sid": "ChallengeBucketAndObjects",
+            "Effect": "Allow",
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::${CHALLENGE_NAME}",
+                "arn:aws:s3:::${CHALLENGE_NAME}/*"
+            ]
+        },
+        {
+            "Sid": "LambdaManagement",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:AddPermission",
+                "lambda:CreateFunction",
+                "lambda:DeleteFunction",
+                "lambda:GetFunction",
+                "lambda:GetFunctionConfiguration",
+                "lambda:ListVersionsByFunction",
+                "lambda:GetPolicy",
+                "lambda:RemovePermission",
+                "lambda:TagResource",
+                "lambda:UntagResource",
+                "lambda:UpdateFunctionCode",
+                "lambda:UpdateFunctionConfiguration",
+                "lambda:PutFunctionConcurrency",
+                "lambda:DeleteFunctionConcurrency",
+                "lambda:GetFunctionConcurrency"
+            ],
+            "Resource": "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${CHALLENGE_NAME}-*"
+        },
+        {
+            "Sid": "EventBridgeManagement",
+            "Effect": "Allow",
+            "Action": [
+                "events:DeleteRule",
+                "events:DescribeRule",
+                "events:ListTagsForResource",
+                "events:ListTargetsByRule",
+                "events:PutRule",
+                "events:PutTargets",
+                "events:RemoveTargets",
+                "events:TagResource",
+                "events:UntagResource"
+            ],
+            "Resource": "arn:aws:events:${AWS_REGION}:${AWS_ACCOUNT_ID}:rule/${CHALLENGE_NAME}-*"
+        },
+        {
+            "Sid": "CloudWatchLogGroupManagement",
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:DeleteLogGroup",
+                "logs:DescribeLogGroups",
+                "logs:ListTagsForResource",
+                "logs:PutRetentionPolicy",
+                "logs:TagResource",
+                "logs:UntagResource"
+            ],
+            "Resource": "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/${CHALLENGE_NAME}-*"
+        },
+        {
+            "Sid": "IamRoleAndUserManagement",
+            "Effect": "Allow",
+            "Action": [
+                "iam:AttachRolePolicy",
+                "iam:CreateAccessKey",
+                "iam:CreateRole",
+                "iam:CreateUser",
+                "iam:DeleteAccessKey",
+                "iam:DeleteRole",
+                "iam:DeleteRolePolicy",
+                "iam:DeleteUser",
+                "iam:DeleteUserPolicy",
+                "iam:DetachRolePolicy",
+                "iam:GetRole",
+                "iam:GetRolePolicy",
+                "iam:GetUser",
+                "iam:GetUserPolicy",
+                "iam:ListAccessKeys",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListRolePolicies",
+                "iam:ListRoleTags",
+                "iam:PassRole",
+                "iam:PutRolePolicy",
+                "iam:PutUserPolicy",
+                "iam:TagRole",
+                "iam:TagUser",
+                "iam:UntagRole",
+                "iam:UntagUser"
+            ],
+            "Resource": [
+                "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CHALLENGE_NAME}-lambda-exec",
+                "arn:aws:iam::${AWS_ACCOUNT_ID}:user/${CHALLENGE_NAME}-hf-space",
+                "arn:aws:iam::${AWS_ACCOUNT_ID}:user/${CHALLENGE_NAME}-artifacts-uploader"
+            ]
+        },
+        {
+            "Sid": "CloudWatchLogsReadGlobal",
+            "Effect": "Allow",
+            "Action": [
+                "logs:DescribeLogGroups"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ChallengeSecretsManagement",
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:CreateSecret",
+                "secretsmanager:DeleteSecret",
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:GetResourcePolicy",
+                "secretsmanager:ListSecretVersionIds",
+                "secretsmanager:PutResourcePolicy",
+                "secretsmanager:PutSecretValue",
+                "secretsmanager:RestoreSecret",
+                "secretsmanager:TagResource",
+                "secretsmanager:UntagResource",
+                "secretsmanager:UpdateSecret"
+            ],
+            "Resource": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:${CHALLENGE_NAME}-*"
+        }
+    ]
+}

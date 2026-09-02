@@ -1,0 +1,108 @@
+name: Naming Guardrail
+
+# Catches challenge-naming mismatches at PR/push time instead of at `tofu
+# apply` time (or worse, silently pointing CI at the wrong challenge's AWS
+# resources). Cheap by design: no `tofu init`, no AWS credentials — just
+# greps opentofu/variables.tf.
+#
+# Also the single place that parses identity values out of variables.tf.
+# deploy.yml / deploy-hf-space.yml consume `outputs.challenge_name` and
+# `outputs.hf_owner` instead of hardcoding their own copies, so
+# opentofu/variables.tf is the one source of truth — no matching GitHub
+# Actions variables to keep in sync.
+
+on:
+  push:
+    branches: [main, hf_testing]
+    paths:
+      - 'opentofu/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [main, hf_testing]
+    paths:
+      - 'opentofu/**'
+      - '.github/workflows/**'
+  # Allows deploy.yml / deploy-hf-space.yml to gate their jobs on this
+  # check via `uses:` + `needs:`, regardless of the paths-filter above, and
+  # to read back `outputs.challenge_name`.
+  workflow_call:
+    outputs:
+      challenge_name:
+        description: "challenge_name default from opentofu/variables.tf (only set when the guardrail passes)"
+        value: ${{ jobs.check.outputs.challenge_name }}
+      hf_owner:
+        description: "hf_owner default from opentofu/variables.tf (only set when the guardrail passes; may be empty)"
+        value: ${{ jobs.check.outputs.hf_owner }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      challenge_name: ${{ steps.check.outputs.challenge_name }}
+      hf_owner: ${{ steps.check.outputs.hf_owner }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Check challenge_name consistency
+        id: check
+        env:
+          # Optional: require challenge_name to contain this substring. OpenADMET
+          # sets it to "challenge" so the shared *challenge* IAM policy wildcard
+          # covers every challenge's resources. Leave the repo/org variable unset
+          # to skip this check.
+          NAME_MUST_CONTAIN: ${{ vars.NAME_MUST_CONTAIN }}
+        run: |
+          set -uo pipefail
+
+          FAILURES=()
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+
+          TF_CHALLENGE=$(awk '/variable "challenge_name"/,/^}/' opentofu/variables.tf \
+            | grep -oP 'default\s*=\s*"\K[^"]+' | head -1)
+
+          # hf_owner is exported for deploy-hf-space.yml. It may legitimately be
+          # empty in the template; deploy-hf-space.yml has its own non-empty check.
+          TF_HF_OWNER=$(awk '/variable "hf_owner"/,/^}/' opentofu/variables.tf \
+            | grep -oP 'default\s*=\s*"\K[^"]*' | head -1)
+
+          if [[ -z "${TF_CHALLENGE}" ]]; then
+            FAILURES+=("Could not find variable \"challenge_name\"'s default in opentofu/variables.tf")
+          else
+            echo "opentofu/variables.tf challenge_name default: ${TF_CHALLENGE}"
+
+            if [[ "${TF_CHALLENGE}" != "${REPO_NAME}" ]]; then
+              FAILURES+=("challenge_name ('${TF_CHALLENGE}') does not match the repo name ('${REPO_NAME}'). The GitHub Actions OIDC trust policy derives the allowed repo path from challenge_name — a mismatch breaks deploy.yml's ability to assume its AWS role.")
+            fi
+
+            if [[ -n "${NAME_MUST_CONTAIN}" && "${TF_CHALLENGE}" != *"${NAME_MUST_CONTAIN}"* ]]; then
+              FAILURES+=("challenge_name ('${TF_CHALLENGE}') must contain the literal substring \"${NAME_MUST_CONTAIN}\" (NAME_MUST_CONTAIN variable) — e.g. so a shared IAM policy wildcard scoped to that substring covers this challenge's resources.")
+            fi
+
+            # deploy.yml / deploy-hf-space.yml consume challenge_name via this
+            # workflow's `outputs.challenge_name` rather than hardcoding their
+            # own CHALLENGE_NAME. This catches anyone who reintroduces a stale
+            # hardcoded value instead of wiring up the output.
+            for f in .github/workflows/deploy.yml .github/workflows/deploy-hf-space.yml; do
+              if grep -qP '^\s*CHALLENGE_NAME:\s*\$\{\{\s*needs\.naming-guardrail\.outputs\.challenge_name\s*\}\}' "${f}"; then
+                continue
+              fi
+
+              WF_CHALLENGE=$(grep -oP '^\s*CHALLENGE_NAME:\s*"?\K(?!\$\{\{)[^"[:space:]]+' "${f}" 2>/dev/null | head -1 || true)
+              if [[ -n "${WF_CHALLENGE}" && "${WF_CHALLENGE}" != "${TF_CHALLENGE}" ]]; then
+                FAILURES+=("${f} hardcodes CHALLENGE_NAME='${WF_CHALLENGE}', which does not match opentofu/variables.tf's challenge_name ('${TF_CHALLENGE}'). It should consume needs.naming-guardrail.outputs.challenge_name instead of hardcoding a value.")
+              fi
+            done
+          fi
+
+          if [[ ${#FAILURES[@]} -gt 0 ]]; then
+            echo "::error::Naming guardrail failed with ${#FAILURES[@]} issue(s):"
+            for msg in "${FAILURES[@]}"; do
+              echo "::error::- ${msg}"
+            done
+            exit 1
+          fi
+
+          echo "challenge_name=${TF_CHALLENGE}" >> "$GITHUB_OUTPUT"
+          echo "hf_owner=${TF_HF_OWNER}" >> "$GITHUB_OUTPUT"
+          echo "Naming guardrail passed: challenge_name='${TF_CHALLENGE}' matches the repo name (hf_owner='${TF_HF_OWNER}')."

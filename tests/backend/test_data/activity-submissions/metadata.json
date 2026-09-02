@@ -1,0 +1,19 @@
+{
+  "submission_id": "1596ed37-b61d-4fc5-af0f-783e8893ded1",
+  "submitted_at": "2026-02-24T23:44:55.104808",
+  "username": "my_name",
+  "safe_username": "my_name",
+  "user_alias": "",
+  "anonymous": false,
+  "participant_name": "Name Surname",
+  "discord_username": "dont_use",
+  "email": "noname@gmail.com",
+  "affiliation": "",
+  "model_report_link": "www.google.com",
+  "include_in_publication": true,
+  "used_proprietary_data": false,
+  "open_source_code": false,
+  "track": "Regression Prediction",
+  "filename": "example-submission.parquet",
+  "s3_key": ""
+}

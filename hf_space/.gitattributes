@@ -1,0 +1,9 @@
+# Route binary assets through Git LFS. Hugging Face transfers the actual
+# object bytes via its Xet backend (registered as an LFS custom transfer
+# agent named "xet"), but the tracking attribute itself must be the
+# standard LFS one -- there is no separate "xet" git filter.
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.gif filter=lfs diff=lfs merge=lfs -text
+*.webp filter=lfs diff=lfs merge=lfs -text

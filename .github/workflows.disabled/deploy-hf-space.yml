@@ -1,0 +1,124 @@
+name: Deploy to HF Space
+
+# Deploys hf_space/ based on which branch was pushed:
+#   main        -> production Space: {HF_OWNER}/{CHALLENGE_NAME}
+#   hf_testing  -> the shared internal testing Space named by the
+#                  HF_INTERNAL_TESTING_SPACE repo variable (job skipped if unset)
+#
+# Required GitHub repository secret:
+#   HF_TOKEN  — Hugging Face API token with write access to the Space
+# HF_OWNER comes from opentofu/variables.tf (via naming-guardrail.yml's output),
+# not a GitHub Actions variable.
+# Optional GitHub repository variable:
+#   HF_INTERNAL_TESTING_SPACE  — "owner/space" of a shared testing Space for the
+#                                hf_testing branch; leave unset to disable that job
+#
+# Binary assets under hf_space/ (see hf_space/.gitattributes) are tracked
+# with standard Git LFS. Git Xet is installed below purely as an LFS
+# custom transfer agent, so `git push` moves that LFS content through
+# Hugging Face's faster Xet backend instead of plain LFS HTTP transfer.
+
+on:
+  push:
+    branches: [main, hf_testing]
+
+jobs:
+  naming-guardrail:
+    uses: ./.github/workflows/naming-guardrail.yml
+
+  deploy:
+    needs: naming-guardrail
+    if: success() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      # Both sourced from opentofu/variables.tf via naming-guardrail.yml, so
+      # variables.tf is the single source of truth. HF_OWNER is var.hf_owner
+      # (also used by the hf-restarter Lambda); the push target is
+      # {HF_OWNER}/{CHALLENGE_NAME}. HF slugs are case-insensitive on huggingface.co.
+      HF_OWNER: ${{ needs.naming-guardrail.outputs.hf_owner }}
+      CHALLENGE_NAME: ${{ needs.naming-guardrail.outputs.challenge_name }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Install and configure Git Xet
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl unzip git-lfs
+          git lfs install
+          curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/huggingface/xet-core/refs/heads/main/git_xet/install.sh | sh
+          git xet install
+          git xet --version
+
+      - name: Fetch full LFS history
+        run: git lfs fetch --all
+
+      - name: Split hf_space into deploy branch
+        run: git subtree split --prefix hf_space -b hf-deploy
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${HF_OWNER}" ]]; then
+            echo "Missing required GitHub Actions variable: HF_OWNER" >&2
+            exit 1
+          fi
+          SPACE_ID="${HF_OWNER}/${CHALLENGE_NAME}"
+          # The username in the URL is ignored for token auth — any value works.
+          git push \
+            "https://hf:${HF_TOKEN}@huggingface.co/spaces/${SPACE_ID}" \
+            hf-deploy:main \
+            --force
+
+  deploy-internal:
+    needs: naming-guardrail
+    if: success() && github.ref == 'refs/heads/hf_testing' && vars.HF_INTERNAL_TESTING_SPACE != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Install and configure Git Xet
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl unzip git-lfs
+          git lfs install
+          curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/huggingface/xet-core/refs/heads/main/git_xet/install.sh | sh
+          git xet install
+          git xet --version
+
+      - name: Fetch full LFS history
+        run: git lfs fetch --all
+
+      - name: Patch Space title for internal testing
+        run: |
+          # Append " (TESTING)" to whatever title hf_space/README.md declares —
+          # no challenge name is hardcoded here.
+          sed -i 's/^title: \(.*\)/title: \1 (TESTING)/' hf_space/README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add hf_space/README.md
+          git commit -m "Tag internal testing Space title"
+
+      - name: Split hf_space into deploy branch
+        run: git subtree split --prefix hf_space -b hf-deploy-internal
+
+      - name: Push to internal testing HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_INTERNAL_TESTING_SPACE: ${{ vars.HF_INTERNAL_TESTING_SPACE }}
+        run: |
+          set -euo pipefail
+          # The username in the URL is ignored for token auth — any value works.
+          git push \
+            "https://hf:${HF_TOKEN}@huggingface.co/spaces/${HF_INTERNAL_TESTING_SPACE}" \
+            hf-deploy-internal:main \
+            --force

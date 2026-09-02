@@ -1,0 +1,37 @@
+name: blind-challenge-template
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - pip
+  # Core data/compute
+  - awswrangler=3.17.0
+  - boto3=1.43.41
+  - duckdb=1.5.4
+  - numpy=2.5.1
+  - openstructure  # version pin omitted: exact versions pull inconsistent glew/libboost-python builds across platforms
+  - pandas=2.3.3
+  - pandera=0.32.1
+  - plotly=6.8.0
+  - pyarrow=24.0.0
+  - scikit-learn=1.9.0
+  - scipy=1.18.0
+  - tqdm=4.68.4
+  # HuggingFace
+  - datasets=5.0.0
+  - huggingface_hub=1.22.0
+  - loguru=0.7.3
+  # Submission pipeline
+  - pydantic=2.12.3
+  # Dev / testing tools
+  - black=26.5.1
+  - ipykernel=7.3.0
+  - mypy=2.2.0
+  - ruff=0.15.20
+  - pytest=9.1.1
+  - pytest-cov=7.1.0
+  - pip:
+    - gradio==5.50.0              # conda-forge may lag; install via pip for latest
+    - gradio-leaderboard==0.0.14  # not on conda-forge
+    - pydoclint==0.9.1            # not on conda-forge

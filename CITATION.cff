@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this template (or a challenge built from it) in your work, please cite it."
+title: "blind-challenge-template: infrastructure for running a blind ML challenge"
+abstract: >-
+  A reusable template for standing up a blind machine-learning challenge:
+  a bootstrapped scoring backend for regression, classification, and
+  protein-ligand structure prediction, OpenTofu-managed AWS infrastructure,
+  and a Hugging Face Spaces frontend for submissions and leaderboards.
+type: software
+authors:
+  - name: "OpenADMET"
+  - name: "Open Molecular Software Foundation"
+repository-code: "https://github.com/OpenADMET/blind-challenge-template"
+url: "https://github.com/OpenADMET/blind-challenge-template"
+license: Apache-2.0
+keywords:
+  - blind challenge
+  - benchmarking
+  - machine learning
+  - cheminformatics
+  - ADMET
+  - leaderboard

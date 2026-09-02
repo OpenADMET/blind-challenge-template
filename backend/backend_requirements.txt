@@ -1,0 +1,11 @@
+awswrangler
+duckdb
+huggingface_hub
+loguru
+numpy
+pandas
+pandera
+pyarrow
+requests
+scikit-learn
+scipy

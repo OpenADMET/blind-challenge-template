@@ -1,0 +1,37 @@
+name: Bug report
+description: Something in the template is broken or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a **security vulnerability**, do not file here — see `SECURITY.md`.
+        For a **question or setup help**, use Discussions.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what actually happened?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Template version / commit
+      description: The tag or commit SHA you copied the template from.
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, OpenTofu version, Python version — whatever is relevant.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      render: shell

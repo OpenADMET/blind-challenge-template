@@ -1,0 +1,24 @@
+version: 2
+
+updates:
+  # GitHub Actions in the workflows. Dependabot only scans .github/workflows/ —
+  # the deploy workflows under .github/workflows.disabled/ get covered once a
+  # challenge repo enables them.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The Hugging Face Space's pinned pip deps (hf_space/requirements.txt).
+  # backend/ deps and the dev/CI environment are conda-managed in environment.yml,
+  # which Dependabot doesn't support — bump those by hand.
+  - package-ecosystem: pip
+    directory: /hf_space
+    schedule:
+      interval: weekly
+    groups:
+      hf-space:
+        patterns: ["*"]

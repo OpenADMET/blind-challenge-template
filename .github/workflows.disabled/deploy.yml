@@ -1,0 +1,165 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'opentofu/**'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/naming-guardrail.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  # Set the AWS_REGION repo/org variable to deploy elsewhere; falls back to us-east-1.
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  naming-guardrail:
+    uses: ./.github/workflows/naming-guardrail.yml
+
+  deploy:
+    needs: naming-guardrail
+    runs-on: ubuntu-latest
+    env:
+      # Sourced from opentofu/variables.tf via naming-guardrail.yml, not
+      # hardcoded here — keeps a single source of truth for challenge_name.
+      CHALLENGE_NAME: ${{ needs.naming-guardrail.outputs.challenge_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Detect changed paths
+        id: changes
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            opentofu:
+              - 'opentofu/**'
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: steps.changes.outputs.backend == 'true'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Generate Docker image tags
+        if: steps.changes.outputs.backend == 'true'
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ${{ steps.login-ecr.outputs.registry }}/${{ env.CHALLENGE_NAME }}-lambda
+          tags: |
+            type=sha,format=long,prefix=sha-
+            type=raw,value=latest
+
+      - name: Build and push Lambda image
+        if: steps.changes.outputs.backend == 'true'
+        id: image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: backend/Dockerfile.lambda
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
+
+      - name: OpenTofu init
+        if: steps.changes.outputs.backend == 'true' || steps.changes.outputs.opentofu == 'true'
+        working-directory: opentofu
+        run: |
+          set -euo pipefail
+          if [[ ! -f backend.hcl ]] || grep -q REPLACE_ME backend.hcl; then
+            echo "opentofu/backend.hcl still has REPLACE_ME placeholders (or is missing)." >&2
+            echo "Fill in your state bucket + lock table and commit it (see docs/SETUP.md)." >&2
+            exit 1
+          fi
+          tofu init -input=false \
+            -backend-config=backend.hcl \
+            -backend-config="key=${CHALLENGE_NAME}/terraform.tfstate"
+
+      - name: OpenTofu plan
+        if: steps.changes.outputs.backend == 'true' || steps.changes.outputs.opentofu == 'true'
+        working-directory: opentofu
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          # challenge_name / hf_owner / github_org are read straight from
+          # variables.tf — no -var flags or GitHub Actions variables needed.
+          EXTRA_VARS=()
+          if [[ "${{ steps.changes.outputs.backend }}" == "true" ]]; then
+            EXTRA_VARS+=("-var=lambda_image_digest=${IMAGE_DIGEST}")
+          fi
+
+          tofu plan \
+            -input=false \
+            -out=tfplan \
+            "${EXTRA_VARS[@]}"
+
+      - name: OpenTofu apply
+        if: steps.changes.outputs.backend == 'true' || steps.changes.outputs.opentofu == 'true'
+        working-directory: opentofu
+        run: tofu apply -input=false -auto-approve tfplan
+
+      - name: Sync Discord webhook secret
+        if: steps.changes.outputs.backend == 'true' || steps.changes.outputs.opentofu == 'true'
+        working-directory: opentofu
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DISCORD_WEBHOOK_URL}" ]]; then
+            echo "Missing required GitHub secret: DISCORD_WEBHOOK_URL" >&2
+            exit 1
+          fi
+
+          SECRET_NAME="$(tofu output -raw discord_webhook_secret_name)"
+          aws secretsmanager put-secret-value \
+            --secret-id "${SECRET_NAME}" \
+            --secret-string "${DISCORD_WEBHOOK_URL}" \
+            >/dev/null
+
+          echo "Synced Discord webhook value to Secrets Manager secret ${SECRET_NAME}."
+
+      - name: Sync HF token secret
+        if: steps.changes.outputs.backend == 'true' || steps.changes.outputs.opentofu == 'true'
+        working-directory: opentofu
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${HF_TOKEN}" ]]; then
+            echo "Missing required GitHub secret: HF_TOKEN" >&2
+            exit 1
+          fi
+
+          SECRET_NAME="$(tofu output -raw hf_token_secret_name)"
+          aws secretsmanager put-secret-value \
+            --secret-id "${SECRET_NAME}" \
+            --secret-string "${HF_TOKEN}" \
+            >/dev/null
+
+          echo "Synced HF token value to Secrets Manager secret ${SECRET_NAME}."

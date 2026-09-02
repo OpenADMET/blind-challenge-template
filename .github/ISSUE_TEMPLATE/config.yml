@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / setup help
+    url: https://github.com/OpenADMET/blind-challenge-template/discussions
+    about: Use Discussions for "how do I…" and setup questions. Issues are for bugs and feature requests in the template.
+  - name: Security vulnerability
+    url: https://github.com/OpenADMET/blind-challenge-template/security/policy
+    about: Do not file a public issue. See SECURITY.md.

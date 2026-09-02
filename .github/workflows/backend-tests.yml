@@ -1,0 +1,65 @@
+name: Backend Tests
+
+# Runs the backend unit suite (pytest tests/backend/) on this repo and on any
+# challenge repo forked from it. This is the one workflow active out of the box.
+# deploy.yml / deploy-hf-space.yml / naming-guardrail.yml ship under
+# .github/workflows.disabled/ and are enabled per docs/SETUP.md.
+#
+# Path-filtered so docs- or hf_space-only changes don't spin up the (heavy) conda
+# env. If you later make "Backend Tests" a *required* status check in branch
+# protection, either drop the `paths:` filters below or add a companion
+# always-passing job for skipped paths — a required check that never triggers
+# blocks the PR from merging.
+
+on:
+  push:
+    branches: [main, hf_testing]
+    paths:
+      - 'backend/**'
+      - 'tests/**'
+      - 'environment.yml'
+      - 'pytest.ini'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    branches: [main, hf_testing]
+    paths:
+      - 'backend/**'
+      - 'tests/**'
+      - 'environment.yml'
+      - 'pytest.ini'
+      - '.github/workflows/backend-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}  # required for micromamba env activation
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up micromamba environment
+        uses: mamba-org/setup-micromamba@add3a49764cedee8ee24e82dfde87f5bc2914462 # v2.0.7
+        with:
+          environment-file: environment.yml
+          cache-environment: true
+
+      - name: Run backend tests
+        run: pytest tests/backend/ -v --cov=backend --cov-report=term-missing
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-report
+          path: .coverage
+          if-no-files-found: ignore

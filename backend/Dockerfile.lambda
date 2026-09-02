@@ -1,0 +1,20 @@
+FROM mambaorg/micromamba:latest
+
+USER root
+
+# Install OpenStructure + Python into base conda env
+RUN micromamba install -y -n base -c bioconda -c conda-forge \
+    "openstructure" "python=3.12" "pip"
+
+ENV LAMBDA_TASK_ROOT=/var/task
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+COPY backend/backend_requirements.txt ${LAMBDA_TASK_ROOT}/backend_requirements.txt
+RUN /opt/conda/bin/pip install --no-cache-dir \
+    awslambdaric \
+    -r ${LAMBDA_TASK_ROOT}/backend_requirements.txt
+
+COPY backend ${LAMBDA_TASK_ROOT}/backend
+
+ENTRYPOINT ["/opt/conda/bin/python", "-m", "awslambdaric"]
+CMD ["backend.lambda_handler_default.handler"]
