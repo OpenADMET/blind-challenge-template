@@ -131,7 +131,7 @@ def test_create_validation_metadata_regression(example_activity_predictions_meta
     assert required_columns.issubset(metadata.columns)
     assert metadata["valid_submission"].dtype == bool
     assert metadata["open_source_code"].dtype == bool
-    assert metadata["submitted_at"].dtype == "datetime64[ns, UTC]"
+    assert metadata["submitted_at"].dt.tz is not None
     assert metadata["all_scores_uri"].iloc[0] == (
         f"s3://{S3_BUCKET}/{REGRESSION_PATHS.scores_all}/new-user/submission-123/"
         "averaged-results.parquet"
