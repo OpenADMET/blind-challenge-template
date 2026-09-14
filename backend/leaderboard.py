@@ -17,8 +17,9 @@ leaderboard DataFrame.
 This module will generate the leaderboard as a DataFrame.
 The leaderboard has the following columns:
 - "rank": The rank of the submission based on the primary metric.
-- "CLD" (Optional): Compact Letter Display, showing which entries are significantly
-  different from each other based on the primary metric.
+- "Significance (<method>)" (optional): significance grouping on the primary metric —
+  "Significance (tiers)" by default (sequential tiers), or "Significance (CLD)" for a
+  Compact Letter Display — showing which entries are statistically distinguishable.
 - "username": The Hugging Face username of the submission owner.
 - "user_alias": The alias to display for the user.
 - "anonymous": Whether the user requested anonymous display.
@@ -134,8 +135,9 @@ class EntryComparison:
             deltas.
         alpha_threshold (float): Family-wise alpha level before multiple-testing
             adjustment.
-        adjusted_threshold (float | None): Holm-Bonferroni threshold for this
-            comparison.
+        adjusted_threshold (float | None): Multiple-testing-adjusted significance
+            threshold for this comparison (per ``determine_adjusted_threshold``'s
+            ``method``, Benjamini-Hochberg by default).
         significant_difference (bool | None): Whether the pair is significantly
             different after adjustment.
 
@@ -210,7 +212,7 @@ class EntryComparison:
         p_rank: int,
         method: (
             Literal["bonferroni", "holm-bonferroni", "benjamini-hochberg"] | None
-        ) = "holm-bonferroni",
+        ) = "benjamini-hochberg",
     ) -> None:
         """Calculate and set the adjusted significance threshold for multiple testing.
 
@@ -228,7 +230,8 @@ class EntryComparison:
             total_comparisons (int): Total number of hypothesis tests (m) in the family.
             p_rank (int): 1-based rank (i) of the p-value when sorted from smallest to largest.
             method (Literal["bonferroni", "holm-bonferroni", "benjamini-hochberg"] | None):
-                The multiple testing correction method to apply. Defaults to "holm-bonferroni".
+                The multiple testing correction method to apply. Defaults to
+                "benjamini-hochberg".
 
         Raises:
             ValueError: If an unrecognized method string is provided.
@@ -254,10 +257,10 @@ class EntryComparison:
         """Determine if the comparison is significant after threshold correction.
 
         Returns:
-            bool: True if the p-value is below the Holm-Bonferroni threshold.
+            bool: True if the p-value is below the adjusted threshold.
 
         Raises:
-            ValueError: If the Holm-Bonferroni threshold has not been computed.
+            ValueError: If the adjusted threshold has not been computed.
 
         """
         if self.adjusted_threshold is not None:
@@ -280,7 +283,7 @@ class FinalLeaderboard:
         metric_sort_ascending (bool): Whether higher or lower values of the primary
             metric are better.
         significant_method (Literal["CLD", "tiers"] | None): Method for labeling
-            significance groups.
+            significance groups. Defaults to "tiers"; None skips significance testing.
         additional_columns (list[str]): Optional extra columns copied from each entry's
             ``averaged_results`` into the leaderboard rows.
         comparisons (dict[frozenset[str], EntryComparison]): Pairwise comparison objects
@@ -293,7 +296,7 @@ class FinalLeaderboard:
     entries: list[LeaderboardEntry]
     primary_metric: str
     metric_sort_ascending: bool = True
-    significant_method: Literal["CLD", "tiers"] | None = "CLD"
+    significant_method: Literal["CLD", "tiers"] | None = "tiers"
     additional_columns: list[str] = field(default_factory=list)
     comparisons: dict[frozenset[str], EntryComparison] = field(default_factory=dict)
     leaderboard_df: pd.DataFrame | None = None
@@ -379,10 +382,22 @@ class FinalLeaderboard:
     ) -> None:
         """Compute pairwise significance for every entry pair.
 
-        Comparisons are sorted by increasing p-value (breaking ties by larger
-        absolute mean difference first), then Holm-Bonferroni correction is
-        applied in sequence. Once a non-significant test is encountered, all
-        subsequent tests are marked non-significant.
+        Comparisons are sorted by increasing p-value (ties broken by larger absolute
+        mean difference first) and each is assigned a multiple-testing-adjusted
+        threshold by ``method`` (default ``"benjamini-hochberg"``). Significance is
+        then resolved per the procedure that matches the correction:
+
+        - ``"benjamini-hochberg"`` (default): step-up — find the largest-rank
+          comparison that passes its threshold, then mark it and every
+          lower-ranked (smaller-p-value) comparison significant.
+        - ``"holm-bonferroni"`` / ``"bonferroni"``: step-down — walk in p-value
+          order; once a test fails, it and every higher-p-value test are
+          non-significant.
+
+        Args:
+            method (Literal["bonferroni", "holm-bonferroni", "benjamini-hochberg"] | None):
+                Multiple-testing correction to apply. Defaults to
+                "benjamini-hochberg".
 
         """
         self.comparisons = {}

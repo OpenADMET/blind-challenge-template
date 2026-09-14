@@ -387,7 +387,7 @@ def create_track_leaderboards(
     stage: str,
     primary_metric: str,
     metric_sort_ascending: bool,
-    significant_method: str | None = "CLD",
+    significant_method: str | None = "tiers",
     additional_columns: list[str] | None = None,
 ) -> dict[str, pd.DataFrame | None]:
     """Build every leaderboard variant for a track: one per endpoint, plus a master.
@@ -426,7 +426,8 @@ def create_track_leaderboards(
         significant_method (str | None): Pairwise significance method ("CLD",
             "tiers") applied to the master leaderboard when ``stage`` is "interim" or
             "final". Ignored (no significance testing) when ``stage`` is "live".
-            Defaults to "CLD".
+            Defaults to "tiers". Multiple-testing correction is Benjamini-Hochberg
+            (see ``FinalLeaderboard._perform_pairwise_comparisons``).
         additional_columns (list[str] | None): Extra bare columns to copy onto every
             leaderboard variant. Defaults to none.
 
