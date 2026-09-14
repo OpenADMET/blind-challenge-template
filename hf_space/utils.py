@@ -19,6 +19,11 @@ _MAX_REDIRECTS = 5
 # Switching to boto3 client which works reliably
 s3_client = boto3.client("s3", region_name=AWS_DEFAULT_REGION)
 
+BANNED_USERNAMES = {  # normalized (lowercase) username: reason
+    # Add entries here to block submissions from a HF username, e.g.:
+    # "some-username": "Suspected of using multiple HF accounts",
+}
+
 
 def _load_csv_from_s3(key: str, parquet: bool = False) -> pd.DataFrame:
     """Load a CSV file from S3 into a DataFrame."""

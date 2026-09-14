@@ -49,7 +49,12 @@ from config import (
 )
 from loguru import logger
 from models import Submission
-from utils import _safeify_username, validate_hf_username, validate_model_details
+from utils import (
+    BANNED_USERNAMES,
+    _safeify_username,
+    validate_hf_username,
+    validate_model_details,
+)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -457,6 +462,16 @@ def submit_predictions(
         return gr.update(
             value=f"Error: Hugging Face username {username.strip()!r} could not be "
             "found. Please check for typos.",
+            visible=True,
+        )
+    banned_reason = BANNED_USERNAMES.get(username.strip().lower())
+    if banned_reason:
+        logger.warning(
+            f"Blocked submission attempt from banned username: {username.strip()!r}"
+        )
+        return gr.update(
+            value=f"Error: Your account ({username.strip()!r}) has been blocked. Reason: {banned_reason}. "
+            "If you believe this is a mistake, please contact the organisers.",
             visible=True,
         )
     if anon_checkbox and (not user_alias or not user_alias.strip()):
