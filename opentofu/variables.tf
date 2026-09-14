@@ -8,6 +8,14 @@ variable "challenge_name" {
   type        = string
   description = "Sole naming input for all AWS resources (e.g. cyp-challenge for a plain challenge, openbind-blind-challenge-1 to fold an external org slug directly into the value). Must match the GitHub repo name. Independent of var.github_org and var.hf_owner."
   default     = "blind-challenge-template"
+
+  validation {
+    # The tightest constraint comes from EventBridge rule names (64-char AWS
+    # limit) combined with the longest static suffix we append,
+    # "-classification-object-created" (30 chars) — see eventbridge.tf.
+    condition     = length(var.challenge_name) <= 34
+    error_message = "challenge_name must be 34 characters or fewer: it's used as-is (or with suffixes up to 30 characters, e.g. \"-classification-object-created\") to name AWS resources such as EventBridge rules, which cap names at 64 characters."
+  }
 }
 
 variable "aws_region" {

@@ -85,6 +85,7 @@ The challenge repo stores all code and drives CI/CD. On pushes/merges to `main`,
 4. **Choose the challenge name (`challenge_name`).** e.g. `cyp-challenge`. Rules:
    - It must equal the GitHub repo name (step 11). The OIDC trust policy derives the allowed repo path from it.
    - If you set the `NAME_MUST_CONTAIN` Actions variable (see below), the name must contain that substring — OpenADMET sets it to `challenge` so a shared `*challenge*` IAM policy covers the resources. Leave the variable unset to skip that check.
+   - Keep it to **34 characters or fewer**. It's used as-is or with suffixes (e.g. `-classification-object-created`) to name AWS resources, and EventBridge rule names cap out at 64 characters — `opentofu/variables.tf`'s validation block will reject anything longer at `tofu plan`/`apply`.
 
 5. **Update `hf_space/`** for your challenge — mainly `config.py` and `README.md` (endpoint definitions, links, page content). `leaderboards.py` may need minor tweaks. Add the logo as `hf_space/_static/challenge_logo.png` (not shipped in the template — Git LFS pointers break when the `.git` dir is reinitialised).
 
