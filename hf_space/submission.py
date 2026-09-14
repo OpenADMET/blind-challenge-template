@@ -35,6 +35,7 @@ from config import (
     CLASSIFICATION_ENDPOINTS,
     DATASET_DOWNLOAD_LINK,
     HOURS_BETWEEN_SUBMISSIONS,
+    MIN_PREDICTION_STD,
     REGRESSION_ENDPOINTS,
     REQUIRED_CLASSIFICATION_COLUMNS,
     REQUIRED_REGRESSION_COLUMNS,
@@ -503,6 +504,12 @@ def submit_predictions(
                 return gr.update(
                     value=f"Error: {col} column contains infinite values.", visible=True
                 )
+            if df[col].nunique() <= 1 or df[col].std() < MIN_PREDICTION_STD:
+                return gr.update(
+                    value=f"Error: {col} predictions are constant or near-constant — "
+                    "please submit real model outputs.",
+                    visible=True,
+                )
         last_submission = _fetch_last_submission_date(
             "regression", _safeify_username(username.strip())
         )
@@ -528,9 +535,19 @@ def submit_predictions(
         if error:
             return gr.update(value=error, visible=True)
         for col in CLASSIFICATION_ENDPOINTS:
-            if not df[col].dropna().isin([0, 1, True, False]).all():
+            if df[col].isnull().any():
+                return gr.update(
+                    value=f"Error: {col} column contains NaN values.", visible=True
+                )
+            if not df[col].isin([0, 1, True, False]).all():
                 return gr.update(
                     value=f"Error: {col} column contains non-binary values.",
+                    visible=True,
+                )
+            if df[col].nunique() <= 1:
+                return gr.update(
+                    value=f"Error: {col} predictions are all one class — "
+                    "a constant prediction cannot be scored.",
                     visible=True,
                 )
         last_submission = _fetch_last_submission_date(

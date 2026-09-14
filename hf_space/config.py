@@ -19,6 +19,10 @@ import os
 # 4: Challenge closed, final leaderboard released
 CURRENT_PHASE = 0
 HOURS_BETWEEN_SUBMISSIONS = 12
+# Minimum standard deviation for regression predictions to be considered valid.
+# Constant columns (with or without slight noise added) can be used to game the
+# leaderboard metric.
+MIN_PREDICTION_STD = 0.01
 
 # Leaderboard and S3 configuration.
 # Regression, classification, and structure are three fully independent backend
