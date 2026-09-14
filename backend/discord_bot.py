@@ -3,6 +3,7 @@ import json
 import os
 import random
 from functools import lru_cache
+from typing import Any
 
 import boto3
 import pandas as pd
@@ -187,7 +188,7 @@ def post_result_to_discord(
         validation_metadata_df, validation_result
     )
 
-    payload = {
+    payload: dict[str, Any] = {
         "embeds": [
             {"title": "Submission Status", "description": content, "color": color}
         ],

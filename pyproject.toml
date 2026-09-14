@@ -3,3 +3,11 @@ style = "numpy"
 arg-type-hints-in-docstring = true
 check-return-types = true
 require-return-section-when-returning-nothing = true
+
+[tool.mypy]
+python_version = "3.12"
+
+# No stub packages exist on PyPI for these; both are otherwise untyped.
+[[tool.mypy.overrides]]
+module = ["sklearn.*", "gradio_leaderboard.*"]
+ignore_missing_imports = true

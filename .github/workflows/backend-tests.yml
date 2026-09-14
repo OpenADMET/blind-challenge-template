@@ -19,6 +19,7 @@ on:
       - 'tests/**'
       - 'environment.yml'
       - 'pytest.ini'
+      - 'pyproject.toml'
       - '.github/workflows/backend-tests.yml'
   pull_request:
     branches: [main, hf_testing]
@@ -27,6 +28,7 @@ on:
       - 'tests/**'
       - 'environment.yml'
       - 'pytest.ini'
+      - 'pyproject.toml'
       - '.github/workflows/backend-tests.yml'
   workflow_dispatch:
 
@@ -52,6 +54,27 @@ jobs:
         with:
           environment-file: environment.yml
           cache-environment: true
+
+      - name: Work around broken RDKit stub package
+        # RDKit bundles auto-generated .pyi stubs (rdkit-stubs) that periodically
+        # contain invalid signatures (e.g. a parameter without a default following
+        # one with a default), which makes mypy abort with a syntax error before it
+        # can check anything. This is a long-standing, unresolved upstream issue
+        # that recurs in different files across releases (see rdkit/rdkit#8339,
+        # #7554, #8673, #7378). openstructure's version is intentionally unpinned
+        # above, so the exact rdkit version — and whether its stubs are currently
+        # broken — can vary between runs. Since rdkit is otherwise untyped for
+        # mypy (ignore_missing_imports), dropping the bundled stubs is safe.
+        run: python -c "import os, shutil, rdkit; sp = os.path.dirname(os.path.dirname(rdkit.__file__)); shutil.rmtree(os.path.join(sp, 'rdkit-stubs'), ignore_errors=True)"
+
+      - name: Lint (ruff)
+        run: ruff check backend/
+
+      - name: Type check (mypy)
+        run: mypy backend/
+
+      - name: Docstring check (pydoclint)
+        run: pydoclint backend/
 
       - name: Run backend tests
         run: pytest tests/backend/ -v --cov=backend --cov-report=term-missing

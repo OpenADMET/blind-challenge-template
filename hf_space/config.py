@@ -197,7 +197,9 @@ def _example_row(identifiers: tuple[str, str], values: list) -> str:
     return ",".join([*identifiers, *[str(v) for v in values]])
 
 
-def _csv_example_md(endpoint_columns: list[str], example_rows: list[list]) -> str:
+def _csv_example_md(
+    endpoint_columns: list[str], example_rows: list[tuple[tuple[str, str], list]]
+) -> str:
     header = ",".join(IDENTIFIER_COLUMNS + endpoint_columns)
     rows = "\n".join(
         _example_row(identifiers, values) for identifiers, values in example_rows

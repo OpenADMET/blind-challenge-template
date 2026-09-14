@@ -54,6 +54,12 @@ def _configure_duckdb_s3_auth(con: duckdb.DuckDBPyConnection) -> None:
         access_key = frozen.access_key
         secret_key = frozen.secret_key
         session_token = frozen.token
+        if access_key is None or secret_key is None:
+            logger.error(
+                "DuckDB credential-chain auth failed and boto3-resolved "
+                "credentials are missing an access key or secret key"
+            )
+            raise chain_error
         region = session.region_name or os.environ.get(
             "AWS_DEFAULT_REGION", "us-east-1"
         )

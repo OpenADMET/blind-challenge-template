@@ -1,0 +1,61 @@
+name: HF Space Code Quality
+
+# Lints/type-checks hf_space/ (the Gradio app). There's no dedicated hf_space test
+# suite (tests/backend/ only covers backend/), so this is quality-checks-only —
+# a lightweight pip install of hf_space/requirements.txt, not the full conda
+# environment.yml used by backend-tests.yml, so an hf_space-only change doesn't pay
+# for the heavier backend setup.
+#
+# Tool versions (ruff/mypy/pydoclint) are pinned separately from environment.yml's
+# dev-tool versions, matching this repo's existing convention of hf_space/
+# tracking its own dependency versions independently of backend/.
+
+on:
+  push:
+    branches: [main, hf_testing]
+    paths:
+      - 'hf_space/**'
+      - 'pyproject.toml'
+      - '.github/workflows/hf-space-checks.yml'
+  pull_request:
+    branches: [main, hf_testing]
+    paths:
+      - 'hf_space/**'
+      - 'pyproject.toml'
+      - '.github/workflows/hf-space-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hf-space-checks-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r hf_space/requirements.txt
+          pip install ruff==0.15.20 mypy==2.2.0 pydoclint==0.9.1 \
+            pandas-stubs==2.3.3.260113 "boto3-stubs[s3]==1.43.92"
+
+      - name: Lint (ruff)
+        run: ruff check hf_space/
+
+      - name: Type check (mypy)
+        run: mypy hf_space/
+
+      - name: Docstring check (pydoclint)
+        run: pydoclint hf_space/

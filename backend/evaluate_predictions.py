@@ -594,10 +594,10 @@ def score_single_structure(
         def _lig_key(lig: object) -> str:
             return f"{lig.chain.name}.{lig.number}"  # type: ignore[attr-defined]
 
-        pli_ref_keys = [_lig_key(l) for l in lddt_pli_sc.target_ligands]
-        pli_mdl_keys = [_lig_key(l) for l in lddt_pli_sc.model_ligands]
-        sc_ref_keys = [_lig_key(l) for l in scrmsd_sc.target_ligands]
-        sc_mdl_keys = [_lig_key(l) for l in scrmsd_sc.model_ligands]
+        pli_ref_keys = [_lig_key(lig) for lig in lddt_pli_sc.target_ligands]
+        pli_mdl_keys = [_lig_key(lig) for lig in lddt_pli_sc.model_ligands]
+        sc_ref_keys = [_lig_key(lig) for lig in scrmsd_sc.target_ligands]
+        sc_mdl_keys = [_lig_key(lig) for lig in scrmsd_sc.model_ligands]
 
         # LDDT-PLI assignment is the primary source of truth for which
         # (ref ligand, model ligand) pairs to report.

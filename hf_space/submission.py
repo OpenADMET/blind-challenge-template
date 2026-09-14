@@ -530,6 +530,7 @@ def submit_predictions(
         )
         if error:
             return gr.update(value=error, visible=True)
+        assert df is not None  # guaranteed by _read_tabular_submission when error is None
         for col in REGRESSION_ENDPOINTS:
             if df[col].isnull().any():
                 return gr.update(
@@ -569,6 +570,7 @@ def submit_predictions(
         )
         if error:
             return gr.update(value=error, visible=True)
+        assert df is not None  # guaranteed by _read_tabular_submission when error is None
         for col in CLASSIFICATION_ENDPOINTS:
             if df[col].isnull().any():
                 return gr.update(

@@ -35,3 +35,7 @@ dependencies:
     - gradio==5.50.0              # conda-forge may lag; install via pip for latest
     - gradio-leaderboard==0.0.14  # not on conda-forge
     - pydoclint==0.9.1            # not on conda-forge
+    # Type stubs for mypy, pinned to match the runtime versions above
+    - pandas-stubs==2.3.3.260113
+    - boto3-stubs[s3,secretsmanager]==1.43.41
+    - scipy-stubs==1.18.0.1

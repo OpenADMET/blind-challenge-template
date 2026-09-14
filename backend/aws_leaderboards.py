@@ -1,6 +1,7 @@
 """Leaderboard generation (ranking, significance testing) from S3 manifest."""
 
 from datetime import datetime
+from typing import Literal, cast
 
 import awswrangler as wr
 import duckdb
@@ -156,7 +157,7 @@ def _read_parquet_batch_by_uri(uris: list[str]) -> dict[str, pd.DataFrame]:
 
     grouped: dict[str, pd.DataFrame] = {}
     for uri, df_slice in combined_df.groupby("filename", sort=False):
-        grouped[uri] = df_slice.drop(columns=["filename"]).reset_index(drop=True)
+        grouped[str(uri)] = df_slice.drop(columns=["filename"]).reset_index(drop=True)
     return grouped
 
 
@@ -182,7 +183,7 @@ def get_averaged_scores_for_leaderboard(
 
     averaged_scores: dict[int, pd.DataFrame] = {}
     for idx, row in manifest.iterrows():
-        averaged_scores[idx] = averaged_by_uri[row["scores_uri_for_leaderboard"]]
+        averaged_scores[cast(int, idx)] = averaged_by_uri[row["scores_uri_for_leaderboard"]]
     return averaged_scores
 
 
@@ -219,7 +220,7 @@ def get_bootstrap_scores_for_leaderboard(
         bootstrap_uri = averaged_uri.replace(
             "averaged-results.parquet", "bootstrap-results.parquet"
         )
-        bootstrap_scores[idx] = bootstrap_by_uri[bootstrap_uri]
+        bootstrap_scores[cast(int, idx)] = bootstrap_by_uri[bootstrap_uri]
     return bootstrap_scores
 
 
@@ -340,7 +341,7 @@ def _build_leaderboard(
     bootstrap_scores: dict[int, pd.DataFrame],
     primary_metric: str,
     metric_sort_ascending: bool,
-    comparisons: str | None,
+    comparisons: Literal["CLD", "tiers"] | None,
     endpoint: str,
     additional_columns: list[str],
 ) -> pd.DataFrame:
@@ -360,7 +361,7 @@ def _build_leaderboard(
         The primary metric to rank by (a bare metric name).
     metric_sort_ascending : bool
         Whether lower values of the primary metric are better.
-    comparisons : str | None
+    comparisons : Literal["CLD", "tiers"] | None
         Pairwise significance method ("CLD", "tiers"), or None to skip
         significance testing.
     endpoint : str
@@ -404,8 +405,8 @@ def _build_leaderboard(
             model_report_link=row.get("model_report_link") or "",
             used_proprietary_data=bool(row.get("used_proprietary_data", False)),
             open_source_code=bool(row.get("open_source_code", False)),
-            averaged_results=averaged_scores[idx],
-            bootstrap_data=bootstrap_scores.get(idx),
+            averaged_results=averaged_scores[cast(int, idx)],
+            bootstrap_data=bootstrap_scores.get(cast(int, idx)),
         )
         entries.append(entry)
 
@@ -427,7 +428,7 @@ def create_track_leaderboards(
     stage: str,
     primary_metric: str,
     metric_sort_ascending: bool,
-    significant_method: str | None = "tiers",
+    significant_method: Literal["CLD", "tiers"] | None = "tiers",
     additional_columns: list[str] | None = None,
 ) -> dict[str, pd.DataFrame | None]:
     """Build every leaderboard variant for a track: one per endpoint, plus a master.
@@ -468,7 +469,7 @@ def create_track_leaderboards(
         The primary metric to rank by (a bare metric name).
     metric_sort_ascending : bool
         Whether lower values of the primary metric are better.
-    significant_method : str | None
+    significant_method : Literal["CLD", "tiers"] | None
         Pairwise significance method ("CLD", "tiers") applied to the master
         leaderboard when ``stage`` is "interim" or "final". Ignored (no
         significance testing) when ``stage`` is "live". Defaults to "tiers".
