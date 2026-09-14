@@ -175,10 +175,6 @@ Submit a **`.zip`** archive containing exactly **{STRUCTURE_DATASET_SIZE} `.pdb`
                     "leaderboard. Required if you have checked the open-source code "
                     "box. Must be a reachable link that starts with 'https://'.",
                 )
-                paper_checkbox = gr.Checkbox(
-                    label="Include me in a future Challenge publication",
-                    value=False,
-                )
 
             # --- Column 3: Track & file ---
             with gr.Column(scale=1):
