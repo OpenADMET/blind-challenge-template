@@ -4,8 +4,6 @@ Standard operating procedure for standing up a **new blind challenge** from this
 
 This document is org-agnostic — it was built and is used by [OpenADMET](https://openadmet.org) but carries no account-specific values. If your organisation keeps an internal runbook with those (state bucket names, an IAM group, a Discord server, a shared testing Space), follow it alongside this one; the two are meant to line up step for step.
 
-> **Internal (OpenADMET):** those account-specific values and the one-time Step 0 bootstrap are in the *Blind Challenge Setup SOP* in Notion — follow it alongside this guide.
-
 `opentofu/README.md` is the deeper reference for what each Tofu resource does and the full variable list. Wherever a step says "see `opentofu/README.md`", that's what it means.
 
 ## Architectural design choices

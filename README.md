@@ -13,8 +13,6 @@ Read the announcement post for the rationale behind the architecture and how the
 
 See [`docs/SETUP.md`](docs/SETUP.md) for the step-by-step checklist to stand up a new challenge — it's org-agnostic, so bring your own account-specific values (state bucket names, IAM group, Discord server).
 
-> **Internal (OpenADMET):** those values and the one-time Step 0 bootstrap are in the *Blind Challenge Setup SOP* in Notion — follow it alongside `docs/SETUP.md`.
-
 ---
 
 ## Customising this template for a new challenge
