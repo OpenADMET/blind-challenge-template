@@ -43,8 +43,6 @@ class Submission(BaseModel):
         Institutional affiliation — stored privately.
     model_report_link : str
         URL to method report (required before deadline).
-    include_in_publication : bool
-        Opt-in for Challenge publication authorship.
     used_proprietary_data : bool
         Whether proprietary data was used in training.
     open_source_code : bool
@@ -77,7 +75,6 @@ class Submission(BaseModel):
     email: str = ""
     affiliation: str = ""
     model_report_link: str = ""
-    include_in_publication: bool = False
     used_proprietary_data: bool = False
     open_source_code: bool = False
 

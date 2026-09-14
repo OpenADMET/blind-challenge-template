@@ -10,7 +10,6 @@
   "email": "noname@gmail.com",
   "affiliation": "",
   "model_report_link": "www.google.com",
-  "include_in_publication": true,
   "used_proprietary_data": false,
   "open_source_code": false,
   "track": "Regression Prediction",

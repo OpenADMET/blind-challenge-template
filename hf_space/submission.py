@@ -220,7 +220,6 @@ Submit a **`.zip`** archive containing exactly **{STRUCTURE_DATASET_SIZE} `.pdb`
                     email,
                     affiliation,
                     model_tag,
-                    paper_checkbox,
                     proprietary_data_checkbox,
                     open_code_checkbox,
                     track_select,
@@ -425,7 +424,6 @@ def submit_predictions(
     email: str,
     affiliation: str,
     model_tag: str,
-    paper_checkbox: bool,
     proprietary_data_checkbox: bool,
     open_code_checkbox: bool,
     track_select: Literal[
@@ -458,8 +456,6 @@ def submit_predictions(
     model_tag : str
         Link to method report (optional). Only checked for reachability when
         ``open_code_checkbox`` is True.
-    paper_checkbox : bool
-        Opt-in for future publication inclusion.
     proprietary_data_checkbox : bool
         Whether proprietary data was used in training.
     open_code_checkbox : bool
@@ -652,7 +648,6 @@ def submit_predictions(
         email=email.strip(),
         affiliation=affiliation.strip(),
         model_report_link=model_status,
-        include_in_publication=paper_checkbox,
         used_proprietary_data=proprietary_data_checkbox,
         open_source_code=open_code_checkbox,
         track=track_select,
