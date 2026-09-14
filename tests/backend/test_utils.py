@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from backend.config import FINAL_LEADERBOARD_DEADLINE, INTERIM_LEADERBOARD_DEADLINE
@@ -11,6 +12,7 @@ from backend.utils import (
     bootstrap_sampling,
     clip_and_log_transform,
     current_phase,
+    validate_model_details,
 )
 
 
@@ -112,3 +114,13 @@ def test_safeify_username_is_idempotent(raw: str) -> None:
     """Re-safeifying an already-safe username is a no-op."""
     once = _safeify_username(raw)
     assert _safeify_username(once) == once
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [None, np.nan, float("nan"), pd.NA, "", "   "],
+    ids=["none", "np_nan", "float_nan", "pd_na", "empty", "whitespace"],
+)
+def test_validate_model_details_treats_missing_as_not_submitted(missing) -> None:
+    """An unfilled optional field arrives as NaN/NA from a pandas column, not None."""
+    assert validate_model_details(missing) == "Not submitted"

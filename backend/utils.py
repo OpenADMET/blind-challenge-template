@@ -9,6 +9,7 @@ from functools import lru_cache
 from urllib.parse import urljoin, urlparse
 
 import numpy as np
+import pandas as pd
 import requests
 from loguru import logger
 
@@ -236,10 +237,10 @@ def validate_hf_username(username: str) -> bool:
     return check_page_exists(hf_url, delay=1, max_retries=10, restrict_to_public=False)
 
 
-def validate_model_details(tag: str) -> str:
+def validate_model_details(tag: str | float | None) -> str:
     """Validate that the model details link is a valid URL and exists."""
     logger.debug("Validating model details link: {}", tag)
-    if tag is None or tag == np.nan or str(tag).strip() == "":
+    if tag is None or pd.isna(tag) or str(tag).strip() == "":
         return "Not submitted"
     safe_tag = str(tag).strip()
     if not safe_tag.startswith("https://"):
