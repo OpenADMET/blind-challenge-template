@@ -142,7 +142,7 @@ def check_page_exists(
     max_retries: int = 3,
     current_retries: int = 0,
     restrict_to_public: bool = True,
-):
+) -> bool:
     """Check if a web page exists at the given URL with a retry limit for 429 errors.
 
     Redirects are followed manually (rather than via ``requests``' built-in
@@ -154,13 +154,13 @@ def check_page_exists(
     ----------
     url : str
         The URL of the page to check.
-    delay : float, optional
+    delay : float
         Seconds to wait until submitting another request. Defaults to 0.
-    max_retries : int, optional
+    max_retries : int
         Maximum number of times to retry on a 429 error. Defaults to 3.
-    current_retries : int, optional
+    current_retries : int
         Current number of retries performed (internal counter). Defaults to 0.
-    restrict_to_public : bool, optional
+    restrict_to_public : bool
         Reject hosts that resolve to a private/loopback/internal address. Only
         meaningful protection when ``url`` (or its host) is attacker-controlled —
         e.g. a user-supplied link. Should be disabled for calls against a

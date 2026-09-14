@@ -416,6 +416,11 @@ def bootstrap_metrics(
 
     Raises
     ------
+    ValueError
+        If a metric needing credible-interval bounds is requested without
+        ``y_true_upper``/``y_true_lower`` being supplied. Raised inside the
+        per-sample loop below, where it is immediately caught and re-raised as
+        ``RuntimeError`` — callers only ever observe the ``RuntimeError``.
     RuntimeError
         If a metric cannot be calculated, or returns a non-finite value with no
         entry in ``METRIC_NAN_FALLBACK``, for any bootstrap sample — rather than
@@ -425,7 +430,8 @@ def bootstrap_metrics(
         mathematically undefined for a zero-variance bootstrap sample — such as a
         submission predicting the same value for every compound) use that
         fallback value instead of raising. This also covers a metric that needs
-        credible-interval bounds (e.g. ST-RAE) when none were supplied.
+        credible-interval bounds (e.g. ST-RAE) when none were supplied, via the
+        ``ValueError`` above.
 
     """
     metrics_with_bounds_flag = [

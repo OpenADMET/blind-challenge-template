@@ -2,6 +2,7 @@
 
 import os
 
+import pandas as pd
 from loguru import logger
 
 from .aws_leaderboards import (
@@ -79,6 +80,18 @@ def _generate_track_leaderboards(
     track (e.g. regression) produces one leaderboard per endpoint plus the
     macro-ranked master leaderboard — see ``aws_leaderboards.create_track_leaderboards``.
 
+    Parameters
+    ----------
+    track_paths : TrackPaths
+        This track's ``TrackPaths`` — selects where the leaderboard is read
+        from/written to.
+    primary_metric : str
+        The metric each leaderboard variant is ranked by.
+    metric_sort_ascending : bool
+        Whether lower or higher values of ``primary_metric`` rank first.
+    additional_columns : list[str]
+        Extra bare columns to copy onto every leaderboard variant.
+
     Returns
     -------
     dict
@@ -120,7 +133,9 @@ def _generate_track_leaderboards(
     return results
 
 
-def _save_leaderboard_if_changed(leaderboard, track: str, endpoint_slug: str) -> dict:
+def _save_leaderboard_if_changed(
+    leaderboard: pd.DataFrame, track: str, endpoint_slug: str
+) -> dict:
     """Conditionally save one already-built leaderboard variant.
 
     Parameters

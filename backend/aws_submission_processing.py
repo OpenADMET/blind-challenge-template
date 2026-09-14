@@ -111,6 +111,10 @@ def save_validated_submission_metadata(
         ``sk.track`` is always "activity" (the single upload prefix), but its
         scores/manifest rows are written per scoring track.
 
+    Returns
+    -------
+    None
+
     """
     s3_metadata_path = (
         f"s3://{S3_BUCKET}/{track_paths.manifest}/"
@@ -406,12 +410,16 @@ def _process_new_tabular_submission(
     track_paths : TrackPaths
         This track's ``TrackPaths`` (``REGRESSION_PATHS`` or
         ``CLASSIFICATION_PATHS``) — selects where scores/manifest are written.
-    validate
+    validate : Callable[[pd.DataFrame, set[str] | None], ValidationResult]
         This track's validator (``validate_regression_submission`` or
         ``validate_classification_submission``).
-    score
+    score : Callable[[pd.DataFrame, int, pd.DataFrame | None, pd.DataFrame | None], tuple[pd.DataFrame, pd.DataFrame]]
         This track's scorer (``score_regression_submission`` or
         ``score_classification_submission``).
+
+    Returns
+    -------
+    None
 
     """
     logger.info(
@@ -506,6 +514,10 @@ def process_new_regression_submission(sk: SubmissionKey) -> None:
         The S3 key components for the submission to fetch, including the track,
         user ID, submission ID, and filename.
 
+    Returns
+    -------
+    None
+
     """
     _process_new_tabular_submission(
         sk, REGRESSION_PATHS, validate_regression_submission, score_regression_submission
@@ -525,6 +537,10 @@ def process_new_classification_submission(sk: SubmissionKey) -> None:
     sk : SubmissionKey
         The S3 key components for the submission to fetch, including the track,
         user ID, submission ID, and filename.
+
+    Returns
+    -------
+    None
 
     """
     _process_new_tabular_submission(
@@ -554,6 +570,11 @@ def _extract_pdb_files(zip_path: Path, extract_dir: Path) -> dict[str, str]:
     -------
     dict[str, str]
         Mapping from molecule ID (PDB stem) to extracted path.
+
+    Raises
+    ------
+    ValueError
+        If a member's path would extract outside ``extract_dir`` (zip-slip guard).
 
     """
     extract_dir = extract_dir.resolve()
@@ -598,6 +619,12 @@ def _download_and_extract_structure_zip(
     ------
     FileNotFoundError
         If the zip object does not exist in S3.
+    ClientError
+        If the S3 download fails for a reason other than a missing key.
+    Exception
+        Re-raised after cleaning up the temporary directory, for any other
+        failure during download or extraction (e.g. an unsafe path caught by
+        ``_extract_pdb_files``).
 
     """
     tmp_dir = Path(tempfile.mkdtemp(prefix=tmp_prefix))
@@ -637,10 +664,10 @@ def fetch_structure_submission_data(
         mapping from molecule ID (stem of each PDB filename) to its extracted
         filesystem path.
 
-    Raises
-    ------
-    FileNotFoundError
-        If the zip object does not exist in S3.
+    Notes
+    -----
+    See ``_download_and_extract_structure_zip`` for exceptions that may
+    propagate from the download/extraction it performs.
 
     """
     s3_url = f"s3://{S3_BUCKET}/{sk.key}"
@@ -665,10 +692,10 @@ def load_structure_ground_truth() -> tuple[Path, dict[str, str]]:
         Temporary extraction directory and mapping from molecule ID (PDB stem) to
         extracted filesystem path.
 
-    Raises
-    ------
-    FileNotFoundError
-        If the ground truth zip is not present in S3.
+    Notes
+    -----
+    See ``_download_and_extract_structure_zip`` for exceptions that may
+    propagate from the download/extraction it performs.
 
     """
     key = f"{STRUCTURE_PATHS.ground_truth}/structure-dataset.zip"
@@ -751,6 +778,10 @@ def process_new_structure_submission(sk: SubmissionKey) -> None:
     ----------
     sk : SubmissionKey
         Parsed S3 key for the submission file.
+
+    Returns
+    -------
+    None
 
     """
     logger.info(

@@ -173,6 +173,10 @@ def post_result_to_discord(
     validation_result : ValidationResult
         The result of the submission validation, including validity and any errors.
 
+    Returns
+    -------
+    None
+
     """
     if not DISCORD_NOTIFICATIONS:
         logger.info("Discord notifications disabled — skipping.")

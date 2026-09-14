@@ -179,6 +179,11 @@ def create_manifest(
     pd.DataFrame
         Manifest rows with metadata and score URIs.
 
+    Raises
+    ------
+    ValueError
+        If ``date_cutoff`` is not a valid ISO date or datetime string.
+
     """
     paths = _TRACK_PATHS[track]
     manifest_path = f"s3://{S3_BUCKET}/{paths.manifest}/*.parquet"

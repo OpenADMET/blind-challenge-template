@@ -142,10 +142,10 @@ def rae_soft_threshold_absolute_error(
         The relative absolute error (RAE) score, with soft-thresholded absolute error
         in both the model error and the naive-baseline error.
 
-    Raises
-    ------
-    ValueError
-        If both explicit bounds and a confidence interval are provided.
+    Notes
+    -----
+    See ``_resolve_bounds`` — raises ``ValueError`` if both explicit bounds and a
+    confidence interval are provided.
 
     """
     y_true_lower, y_true_upper = _resolve_bounds(
@@ -313,10 +313,10 @@ def rae_inverse_confidence_weighting(
         The relative absolute error (RAE) score, with inverse confidence weighting
         applied to both the model error and the naive-baseline error.
 
-    Raises
-    ------
-    ValueError
-        If both explicit bounds and a confidence interval are provided.
+    Notes
+    -----
+    See ``_resolve_bounds`` — raises ``ValueError`` if both explicit bounds and a
+    confidence interval are provided.
 
     """
     y_true_lower, y_true_upper = _resolve_bounds(

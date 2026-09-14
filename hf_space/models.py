@@ -17,39 +17,43 @@ class Submission(BaseModel):
 
     Attributes
     ----------
-    submission_id
+    model_config
+        Pydantic model configuration. ``protected_namespaces=()`` disables
+        Pydantic's "model_" protected-namespace warning, which would otherwise
+        fire on fields like ``model_report_link``.
+    submission_id : str
         Auto-generated UUID, used as the S3 key component.
-    submitted_at
+    submitted_at : datetime
         UTC timestamp of submission.
-    username
+    username : str
         HuggingFace username (required, used for deduplication).
-    safe_username
+    safe_username : str
         Sanitised username for use in S3 keys and file paths.
-    user_alias
+    user_alias : str
         Optional display alias for anonymous submissions.
-    anonymous
+    anonymous : bool
         If True, display user_alias on leaderboard instead of username.
-    participant_name
+    participant_name : str
         Real name — stored privately, never displayed.
-    discord_username
+    discord_username : str
         Discord handle — stored privately.
-    email
+    email : str
         Contact email — stored privately.
-    affiliation
+    affiliation : str
         Institutional affiliation — stored privately.
-    model_report_link
+    model_report_link : str
         URL to method report (required before deadline).
-    include_in_publication
+    include_in_publication : bool
         Opt-in for Challenge publication authorship.
-    used_proprietary_data
+    used_proprietary_data : bool
         Whether proprietary data was used in training.
-    open_source_code
+    open_source_code : bool
         Whether the participant's code is open-source and publicly available.
-    track
+    track : Literal["Regression Prediction", "Classification Prediction", "Structure Prediction"]
         Competition track.
-    filename
+    filename : str
         Original uploaded filename.
-    s3_key
+    s3_key : str
         Full S3 object key for the uploaded prediction file. Populated by
         submission_store.upload_submission() after upload.
 

@@ -152,6 +152,10 @@ class EntryComparison:
         Two-sided sign-test style p-value estimated from bootstrap deltas.
     alpha_threshold : float
         Family-wise alpha level before multiple-testing adjustment.
+    adjustment_rank : int
+        1-based rank (i) of this comparison's p-value when sorted from smallest to
+        largest across the family of comparisons, as used by
+        ``determine_adjusted_threshold``.
     adjusted_threshold : float | None
         Multiple-testing-adjusted significance threshold for this comparison (per
         ``determine_adjusted_threshold``'s ``method``, Benjamini-Hochberg by
@@ -253,6 +257,10 @@ class EntryComparison:
         method : Literal["bonferroni", "holm-bonferroni", "benjamini-hochberg"] | None
             The multiple testing correction method to apply. Defaults to
             "benjamini-hochberg".
+
+        Returns
+        -------
+        None
 
         Raises
         ------
@@ -430,6 +438,15 @@ class FinalLeaderboard:
         ----------
         method : Literal["bonferroni", "holm-bonferroni", "benjamini-hochberg"] | None
             Multiple-testing correction to apply. Defaults to "benjamini-hochberg".
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If any entry is missing ``bootstrap_data``.
 
         """
         self.comparisons = {}
@@ -635,6 +652,11 @@ class FinalLeaderboard:
         list[str]
             Tier labels ('Tier 1', 'Tier 2', etc.) aligned perfectly with the row
             order of the leaderboard_df.
+
+        Raises
+        ------
+        ValueError
+            If ``leaderboard_df`` is ``None`` or empty.
 
         """
         if self.leaderboard_df is None or self.leaderboard_df.empty:

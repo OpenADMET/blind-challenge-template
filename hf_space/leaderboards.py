@@ -80,6 +80,16 @@ def format_leaderboard_uri(
     version : str
         "latest" (default), or an ISO-format timestamp for a dated snapshot.
 
+    Returns
+    -------
+    str
+        The formatted S3 URI for the requested leaderboard.
+
+    Raises
+    ------
+    ValueError
+        If ``track`` or ``leaderboard_type`` is not one of the recognised values.
+
     """
     if track not in [REGRESSION_TRACK, CLASSIFICATION_TRACK, STRUCTURE_TRACK]:
         raise ValueError(f"Invalid track: {track}")

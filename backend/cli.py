@@ -45,6 +45,10 @@ def validate(
     structure_predictions : str
         Path to the structure predictions zip file.
 
+    Returns
+    -------
+    None
+
     Raises
     ------
     click.UsageError
