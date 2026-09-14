@@ -2,5 +2,4 @@
 style = "numpy"
 arg-type-hints-in-docstring = true
 check-return-types = true
-check-yield-types = false
 require-return-section-when-returning-nothing = true
