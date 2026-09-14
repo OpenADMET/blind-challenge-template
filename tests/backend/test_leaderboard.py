@@ -119,8 +119,8 @@ def test_EntryComparison(mock_averaged_results):
     assert comparison.p_value == 0.0
     assert len(comparison.paired_bootstrap_data) == 10
 
-    # Test Holm-Bonferroni Threshold
-    # alpha=0.05, total=1, rank=1 => 0.05 / (1 - 1 + 1) = 0.05
+    # Test adjusted threshold (default correction: Benjamini-Hochberg)
+    # alpha=0.05, total=1, rank=1 => 0.05 * 1 / 1 = 0.05
     comparison.determine_adjusted_threshold(total_comparisons=1, p_rank=1)
     assert comparison.adjusted_threshold == 0.05
 
