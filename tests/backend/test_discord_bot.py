@@ -4,6 +4,7 @@ import pandas as pd
 
 from backend.discord_bot import (
     VALID_SUBMISSION_RESPONSES,
+    _format_pb_failures,
     _unpack_metadata,
     prepare_discord_message,
 )
@@ -169,4 +170,70 @@ def test_prepare_discord_message_invalid_without_long_error_details(
     assert color == 15158332
     assert "Invalid" in content
     assert "See file above for more details" not in content
+
+
+def test_prepare_discord_message_pb_failures(example_validation_metadata):
+    """PoseBusters failures on an otherwise valid submission produce an orange warning with details."""
+    validation_result = ValidationResult(is_valid=True, scoring="complete")
+    validation_result.pb_failures = {
+        "OADMET-00001": ["bond_angles", "energy_ratio"],
+        "OADMET-00002": ["volume_overlap"],
+    }
+
+    color, content, long_errors = prepare_discord_message(
+        example_validation_metadata, validation_result
+    )
+
+    assert color == 15105570
+    assert "PoseBusters" in content
+    assert "2" in content
+    assert long_errors is not None
+    assert "OADMET-00001" in long_errors
+    assert "bond_angles" in long_errors
+    assert "OADMET-00002" in long_errors
+    assert "volume_overlap" in long_errors
+
+
+def test_prepare_discord_message_partial_with_pb_failures(example_validation_metadata):
+    """Partial scoring with PoseBusters failures appends pb details to the error file."""
+    validation_result = ValidationResult(is_valid=True, scoring="partial")
+    validation_result.scoring_errors = ["OADMET-00010"]
+    validation_result.pb_failures = {"OADMET-00020": ["energy_ratio"]}
+
+    color, content, long_errors = prepare_discord_message(
+        example_validation_metadata, validation_result
+    )
+
+    assert color == 15105570
+    assert "Partially valid" in content
+    assert long_errors is not None
+    assert "OADMET-00010" in long_errors
+    assert "OADMET-00020" in long_errors
+    assert "energy_ratio" in long_errors
+
+
+def test_prepare_discord_message_no_pb_failures_green(example_validation_metadata):
+    """Valid submission with no PoseBusters failures still produces a green success message."""
+    validation_result = ValidationResult(is_valid=True, scoring="complete")
+
+    color, content, long_errors = prepare_discord_message(
+        example_validation_metadata, validation_result
+    )
+
+    assert color == 3066993
     assert long_errors is None
+
+
+def test_format_pb_failures():
+    """_format_pb_failures renders each compound and its failed check names."""
+    failures = {
+        "OADMET-00002": ["volume_overlap"],
+        "OADMET-00001": ["bond_angles", "energy_ratio"],
+    }
+    result = _format_pb_failures(failures)
+
+    # Compounds are sorted alphabetically
+    assert result.index("OADMET-00001") < result.index("OADMET-00002")
+    assert "bond_angles" in result
+    assert "energy_ratio" in result
+    assert "volume_overlap" in result

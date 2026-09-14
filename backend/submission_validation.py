@@ -48,6 +48,10 @@ class ValidationResult:
     errors: list[SubmissionError] = field(default_factory=list)
     scoring_errors: list[str] = field(default_factory=list)
     system_errors: list[str] = field(default_factory=list)
+    # Maps molecule ID to the list of PoseBusters check names that failed for it.
+    # Only populated for structure submissions where at least one compound exceeds the
+    # max-failures threshold (and therefore has its scores zeroed).
+    pb_failures: dict[str, list[str]] = field(default_factory=dict)
 
     def add_error(self, message: str, details: list[str] | None = None) -> None:
         """Add an error to the validation result and mark as invalid."""

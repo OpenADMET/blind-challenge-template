@@ -614,7 +614,7 @@ def score_structure_submission(
     phase: int,
     ground_truth: dict[str, str] | None = None,
     identifiers: pd.DataFrame | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, list[str]]]:
     """Score a structure submission against the ground truth.
 
     Args:
@@ -627,17 +627,18 @@ def score_structure_submission(
         identifiers (pd.DataFrame | None): Optional preloaded structure identifiers.
 
     Returns:
-        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: A tuple of
-            (per_compound_df, bootstrap_df, averaged_df) where per_compound_df
-            contains per-compound raw scores, bootstrap_df the full bootstrap
-            results, and averaged_df the single-row, endpoint-prefixed mean/std
-            per metric (see ``evaluate_predictions.pivot_endpoint_results_wide``),
-            ready for the leaderboard.
+        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, list[str]]]:
+            A tuple of (per_compound_df, bootstrap_df, averaged_df, pb_failures)
+            where per_compound_df contains per-compound raw scores, bootstrap_df the
+            full bootstrap results, averaged_df the single-row, endpoint-prefixed
+            mean/std per metric (see ``evaluate_predictions.pivot_endpoint_results_wide``),
+            and pb_failures maps molecule ID to the PoseBusters check names that caused
+            its scores to be zeroed (only compounds exceeding the failure threshold appear).
 
     """
     if ground_truth is None:
         _, ground_truth = load_structure_ground_truth()
-    per_compound_df = score_structure_predictions(predicted, ground_truth)
+    per_compound_df, pb_failures = score_structure_predictions(predicted, ground_truth)
 
     if phase != 0:
         phase_identifiers = (
@@ -660,7 +661,7 @@ def score_structure_submission(
     # (see pivot_endpoint_results_wide) as every other track.
     by_endpoint_results["coverage_mean"] = per_compound_df["coverage"].mean()
     averaged_df = pivot_endpoint_results_wide(by_endpoint_results)
-    return per_compound_df, bootstrap_df, averaged_df
+    return per_compound_df, bootstrap_df, averaged_df, pb_failures
 
 
 def process_new_structure_submission(sk: SubmissionKey) -> None:
@@ -699,7 +700,7 @@ def process_new_structure_submission(sk: SubmissionKey) -> None:
             try:
                 ground_truth_tmp_dir, ground_truth = load_structure_ground_truth()
                 for phase in [0, 1]:
-                    per_compound_df, bootstrap_df, averaged_df = (
+                    per_compound_df, bootstrap_df, averaged_df, phase_pb_failures = (
                         score_structure_submission(
                             predicted,
                             phase=phase,
@@ -726,8 +727,9 @@ def process_new_structure_submission(sk: SubmissionKey) -> None:
                         sk.submission_id,
                         base,
                     )
-                    # Check for failed scoring
+                    # Check for failed scoring; collect pb failures from the full set
                     if phase == 0:
+                        validation_result.pb_failures = phase_pb_failures
                         failed_scoring = per_compound_df[
                             per_compound_df["coverage"] == 0
                         ]

@@ -5,6 +5,7 @@ loguru
 numpy
 pandas
 pandera
+posebusters
 pyarrow
 requests
 scikit-learn

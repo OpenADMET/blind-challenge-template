@@ -130,12 +130,31 @@ def prepare_discord_message(
                 f"Scoring failed for the following compounds: "
                 f"{', '.join(validation_result.scoring_errors)}"
             )
+            if validation_result.pb_failures:
+                long_errors += "\n\n" + _format_pb_failures(validation_result.pb_failures)
+        elif validation_result.pb_failures:
+            n_pb = len(validation_result.pb_failures)
+            content = (
+                f"⚠️ Valid {track} submission from **{name}** at {time}, but"
+                f" {n_pb} compound(s) failed PoseBusters checks and had their scores"
+                " zeroed. See file above for details."
+            )
+            color = 15105570  # Orange
+            long_errors = _format_pb_failures(validation_result.pb_failures)
         else:
             content = random.choice(VALID_SUBMISSION_RESPONSES).format(
                 track=track, name=name, time=time
             )
             color = 3066993  # Green
     return color, content, long_errors
+
+
+def _format_pb_failures(pb_failures: dict[str, list[str]]) -> str:
+    """Format a molecule-to-failed-checks mapping as a human-readable string."""
+    lines = ["PoseBusters checks failed (scores zeroed for these compounds):"]
+    for mol_id, checks in sorted(pb_failures.items()):
+        lines.append(f"  {mol_id}: {', '.join(checks)}")
+    return "\n".join(lines)
 
 
 def post_result_to_discord(

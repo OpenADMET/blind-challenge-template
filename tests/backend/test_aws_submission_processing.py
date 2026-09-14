@@ -723,7 +723,7 @@ def test_score_structure_submission_phase_0_no_filtering(monkeypatch):
         {"Molecule_Name": ["a", "b", "c"], "coverage": [1.0, 0.5, 0.0]}
     )
     monkeypatch.setattr(
-        asp, "score_structure_predictions", lambda predicted, gt: per_compound
+        asp, "score_structure_predictions", lambda predicted, gt: (per_compound, {})
     )
     monkeypatch.setattr(
         asp, "bootstrap_structure_metrics", lambda df, n: pd.DataFrame({"dummy": [1]})
@@ -735,8 +735,10 @@ def test_score_structure_submission_phase_0_no_filtering(monkeypatch):
     )
     monkeypatch.setattr(asp, "pivot_endpoint_results_wide", lambda df: df)
 
-    result_per_compound, _bootstrap_df, averaged_df = asp.score_structure_submission(
-        predicted={}, phase=0, ground_truth={}, identifiers=None
+    result_per_compound, _bootstrap_df, averaged_df, _pb_failures = (
+        asp.score_structure_submission(
+            predicted={}, phase=0, ground_truth={}, identifiers=None
+        )
     )
     assert len(result_per_compound) == 3
     assert averaged_df["coverage_mean"].iloc[0] == pytest.approx(0.5)
@@ -749,7 +751,7 @@ def test_score_structure_submission_phase_1_filters_by_isin(monkeypatch):
     )
     identifiers = pd.DataFrame({"Molecule_Name": ["a", "b", "c"], "phase": [1, 2, 1]})
     monkeypatch.setattr(
-        asp, "score_structure_predictions", lambda predicted, gt: per_compound
+        asp, "score_structure_predictions", lambda predicted, gt: (per_compound, {})
     )
     monkeypatch.setattr(
         asp, "bootstrap_structure_metrics", lambda df, n: pd.DataFrame({"dummy": [1]})
@@ -761,8 +763,10 @@ def test_score_structure_submission_phase_1_filters_by_isin(monkeypatch):
     )
     monkeypatch.setattr(asp, "pivot_endpoint_results_wide", lambda df: df)
 
-    result_per_compound, _bootstrap_df, averaged_df = asp.score_structure_submission(
-        predicted={}, phase=1, ground_truth={}, identifiers=identifiers
+    result_per_compound, _bootstrap_df, averaged_df, _pb_failures = (
+        asp.score_structure_submission(
+            predicted={}, phase=1, ground_truth={}, identifiers=identifiers
+        )
     )
     assert set(result_per_compound["Molecule_Name"]) == {"a", "c"}
     assert averaged_df["coverage_mean"].iloc[0] == pytest.approx(0.5)
@@ -777,7 +781,7 @@ def test_score_structure_submission_loads_ground_truth_when_not_provided(monkeyp
 
     def fake_score(predicted, gt):
         captured["gt"] = gt
-        return pd.DataFrame({"Molecule_Name": ["a"], "coverage": [1.0]})
+        return pd.DataFrame({"Molecule_Name": ["a"], "coverage": [1.0]}), {}
 
     monkeypatch.setattr(asp, "score_structure_predictions", fake_score)
     monkeypatch.setattr(
@@ -837,7 +841,12 @@ def _patch_structure_submission_pipeline(monkeypatch, tmp_path, per_compound_df)
     )
 
     score_mock = MagicMock(
-        return_value=(per_compound_df, pd.DataFrame(), pd.DataFrame({"x": [1]}))
+        return_value=(
+            per_compound_df,
+            pd.DataFrame(),
+            pd.DataFrame({"x": [1]}),
+            {},
+        )
     )
     monkeypatch.setattr(asp, "score_structure_submission", score_mock)
 

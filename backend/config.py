@@ -111,6 +111,10 @@ STRUCTURE_METRICS = ["LDDT-PLI", "BiSyRMSD", "LDDT-LP"]
 # Penalty applied to BiSyRMSD when OST cannot match the ligand (lower is better,
 # so a large value is used; 20 Å is well outside any reasonable binding-site RMSD)
 BISYRMSD_NAN_PENALTY: float = 20.0
+# Worst-case scores returned for a pose that fails the PoseBusters filter. LDDT values
+# floor at 0; BiSyRMSD uses the same penalty as an unscored structure so its contribution
+# to the bootstrap mean is identically bad.
+POSEBUSTERS_MAX_FAILURES: int = 0
 # TODO: filename of the reference protein structure in the ground-truth data.
 PROTEIN_DATA_FILE = "protein_structure.pdb"
 # Structure track currently scores a single pseudo-endpoint. A future structure track
