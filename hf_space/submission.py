@@ -237,16 +237,21 @@ def upload_submission(submission: Submission, file_path: Path) -> Submission:
     On failure, logs the error and returns the submission unchanged so the
     caller can still surface a user-facing message.
 
-    Args:
-        submission (Submission): Validated Submission instance (s3_key will be set
-            here).
-        file_path (Path): Local path to the uploaded prediction file.
+    Parameters
+    ----------
+    submission : Submission
+        Validated Submission instance (s3_key will be set here).
+    file_path : Path
+        Local path to the uploaded prediction file.
 
-    Returns:
-        Submission: The submission with s3_key set to the uploaded object key.
+    Returns
+    -------
+    Submission
+        The submission with s3_key set to the uploaded object key.
 
-    Todo:
-        - Consider server-side encryption (SSE-S3 or SSE-KMS).
+    Notes
+    -----
+    TODO: Consider server-side encryption (SSE-S3 or SSE-KMS).
 
     """
     bucket = S3_BUCKET
@@ -294,14 +299,18 @@ def upload_submission(submission: Submission, file_path: Path) -> Submission:
 def _fetch_last_submission_date(track: str, user_id: str) -> datetime | None:
     """Fetch the submission date of the most recent submission for a track and user.
 
-    Args:
-        track (str): The track name (e.g., "regression", "classification", or
-            "structure").
-        user_id (str): The user ID to check for previous submissions.
+    Parameters
+    ----------
+    track : str
+        The track name (e.g., "regression", "classification", or "structure").
+    user_id : str
+        The user ID to check for previous submissions.
 
-    Returns:
-        datetime | None: The submission date of the most recent submission, or None if
-                         no previous submissions are found.
+    Returns
+    -------
+    datetime | None
+        The submission date of the most recent submission, or None if no previous
+        submissions are found.
 
     """
     bucket = S3_BUCKET
@@ -365,16 +374,22 @@ def _read_tabular_submission(
 ) -> tuple[pd.DataFrame | None, str | None]:
     """Read and apply the shared row/column checks for a tabular submission.
 
-    Args:
-        file_path (Path): Path to the uploaded file.
-        required_columns (list[str]): Columns the file must contain — this track's
-            identifiers plus its own endpoint columns.
-        track_label (str): Human-readable track name for error messages (e.g.
-            "Regression", "Classification").
+    Parameters
+    ----------
+    file_path : Path
+        Path to the uploaded file.
+    required_columns : list[str]
+        Columns the file must contain — this track's identifiers plus its own
+        endpoint columns.
+    track_label : str
+        Human-readable track name for error messages (e.g. "Regression",
+        "Classification").
 
-    Returns:
-        tuple[pd.DataFrame | None, str | None]: The parsed DataFrame and ``None`` on
-            success, or ``None`` and a user-facing error message on failure.
+    Returns
+    -------
+    tuple[pd.DataFrame | None, str | None]
+        The parsed DataFrame and ``None`` on success, or ``None`` and a
+        user-facing error message on failure.
 
     """
     suffix = file_path.suffix.lower()
@@ -422,30 +437,43 @@ def submit_predictions(
 
     Validates required fields and the uploaded file, then records the submission.
 
-    Args:
-        username (str): HuggingFace username (required). Checked against Hugging
-            Face to confirm the account exists — this is not an identity proof, just
-            a sanity check that the username is real.
-        user_alias (str): Optional alias for anonymous display on the leaderboard.
-        anon_checkbox (bool): If True, display alias instead of username.
-        participant_name (str): Real name (private, not displayed publicly).
-        discord_username (str): Discord handle (optional).
-        email (str): Contact email (optional).
-        affiliation (str): Institutional affiliation (optional).
-        model_tag (str): Link to method report (optional). Only checked for
-            reachability when ``open_code_checkbox`` is True.
-        paper_checkbox (bool): Opt-in for future publication inclusion.
-        proprietary_data_checkbox (bool): Whether proprietary data was used in
-            training.
-        open_code_checkbox (bool): Whether the participant's code is open-source
-            and publicly available. When True, ``model_tag`` is validated as a
-            reachable link.
-        track_select (Literal["Regression Prediction", "Classification Prediction",
-            "Structure Prediction"]): The selected competition track.
-        file_input (str | None): Path to the uploaded submission file.
+    Parameters
+    ----------
+    username : str
+        HuggingFace username (required). Checked against Hugging Face to confirm
+        the account exists — this is not an identity proof, just a sanity check
+        that the username is real.
+    user_alias : str
+        Optional alias for anonymous display on the leaderboard.
+    anon_checkbox : bool
+        If True, display alias instead of username.
+    participant_name : str
+        Real name (private, not displayed publicly).
+    discord_username : str
+        Discord handle (optional).
+    email : str
+        Contact email (optional).
+    affiliation : str
+        Institutional affiliation (optional).
+    model_tag : str
+        Link to method report (optional). Only checked for reachability when
+        ``open_code_checkbox`` is True.
+    paper_checkbox : bool
+        Opt-in for future publication inclusion.
+    proprietary_data_checkbox : bool
+        Whether proprietary data was used in training.
+    open_code_checkbox : bool
+        Whether the participant's code is open-source and publicly available.
+        When True, ``model_tag`` is validated as a reachable link.
+    track_select : Literal["Regression Prediction", "Classification Prediction", "Structure Prediction"]
+        The selected competition track.
+    file_input : str | None
+        Path to the uploaded submission file.
 
-    Returns:
-        dict: gr.update with a status message and visible=True.
+    Returns
+    -------
+    dict
+        gr.update with a status message and visible=True.
 
     """
     # --- required field validation ---

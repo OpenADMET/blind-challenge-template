@@ -75,22 +75,29 @@ def score_activity_predictions(
     that want a track's "MA" row should call ``add_macro_endpoint`` on this function's
     output with the same ``endpoints`` (and that track's own metrics).
 
-    Args:
-        predictions (pd.DataFrame): The predicted activity values.
-        ground_truth (pd.DataFrame): The true activity values.
-        endpoints (list[str]): The endpoints to score, e.g. ``REGRESSION_ENDPOINTS``
-            or ``CLASSIFICATION_ENDPOINTS`` — regression and classification are
-            independent submission tracks, so a given call only ever scores one
-            track's endpoints.
+    Parameters
+    ----------
+    predictions : pd.DataFrame
+        The predicted activity values.
+    ground_truth : pd.DataFrame
+        The true activity values.
+    endpoints : list[str]
+        The endpoints to score, e.g. ``REGRESSION_ENDPOINTS`` or
+        ``CLASSIFICATION_ENDPOINTS`` — regression and classification are
+        independent submission tracks, so a given call only ever scores one
+        track's endpoints.
 
-    Returns:
-        pd.DataFrame: A DataFrame containing the scored bootstrapped activity
-            predictions, one row per (endpoint, bootstrap sample) — no macro
-            pseudo-endpoint included.
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the scored bootstrapped activity predictions, one
+        row per (endpoint, bootstrap sample) — no macro pseudo-endpoint included.
 
-    Raises:
-        ValueError: If a compound with a ground-truth value for an endpoint has no
-            prediction for that endpoint.
+    Raises
+    ------
+    ValueError
+        If a compound with a ground-truth value for an endpoint has no prediction
+        for that endpoint.
 
     """
     logger.info("Scoring activity predictions against ground truth")
@@ -194,21 +201,25 @@ def add_macro_endpoint(
     ``compute_macro_bootstrap_results``) when there's more than one endpoint to
     average across.
 
-    Args:
-        all_endpoint_bootstrap_results (pd.DataFrame): Output of
-            ``score_activity_predictions`` (or any frame with "Sample", "Endpoint",
-            and metric columns for multiple endpoints/tracks).
-        endpoints (list[str]): The track's real endpoints to keep, e.g.
-            ``REGRESSION_ENDPOINTS`` or ``CLASSIFICATION_ENDPOINTS``. May be empty, in
-            which case the result is empty (callers should generally avoid calling
-            this with an empty list rather than relying on that).
-        metrics (list[tuple[str, Callable]]): The track's own metric list, e.g.
-            ``ACTIVITY_METRICS`` or ``CLASSIFICATION_METRICS`` — only these columns
-            are kept.
+    Parameters
+    ----------
+    all_endpoint_bootstrap_results : pd.DataFrame
+        Output of ``score_activity_predictions`` (or any frame with "Sample",
+        "Endpoint", and metric columns for multiple endpoints/tracks).
+    endpoints : list[str]
+        The track's real endpoints to keep, e.g. ``REGRESSION_ENDPOINTS`` or
+        ``CLASSIFICATION_ENDPOINTS``. May be empty, in which case the result is
+        empty (callers should generally avoid calling this with an empty list
+        rather than relying on that).
+    metrics : list[tuple[str, Callable]]
+        The track's own metric list, e.g. ``ACTIVITY_METRICS`` or
+        ``CLASSIFICATION_METRICS`` — only these columns are kept.
 
-    Returns:
-        pd.DataFrame: This track's real-endpoint rows, narrowed to its own metric
-            columns, plus a macro "MA" row set when ``len(endpoints) > 1``.
+    Returns
+    -------
+    pd.DataFrame
+        This track's real-endpoint rows, narrowed to its own metric columns, plus
+        a macro "MA" row set when ``len(endpoints) > 1``.
 
     """
     metric_names = [name for name, _ in metrics]
@@ -254,20 +265,23 @@ def compute_macro_bootstrap_results(
     Kendall's tau (different asymptotic sampling distribution), so there was never a
     transform-based option for it here.
 
-    Args:
-        all_endpoint_bootstrap_results (pd.DataFrame): Per-endpoint bootstrap metrics
-            for a single track, as returned by ``add_macro_endpoint``'s narrowing step
-            (or by concatenating per-endpoint ``bootstrap_metrics(...)`` results).
-            Must contain "Sample", "Endpoint", and one column per metric in
-            ``metrics``.
-        metrics (list[tuple[str, Callable]]): The metric list to macro-average — only
-            the names are used here (e.g. ``ACTIVITY_METRICS`` or
-            ``CLASSIFICATION_METRICS``).
+    Parameters
+    ----------
+    all_endpoint_bootstrap_results : pd.DataFrame
+        Per-endpoint bootstrap metrics for a single track, as returned by
+        ``add_macro_endpoint``'s narrowing step (or by concatenating per-endpoint
+        ``bootstrap_metrics(...)`` results). Must contain "Sample", "Endpoint",
+        and one column per metric in ``metrics``.
+    metrics : list[tuple[str, Callable]]
+        The metric list to macro-average — only the names are used here (e.g.
+        ``ACTIVITY_METRICS`` or ``CLASSIFICATION_METRICS``).
 
-    Returns:
-        pd.DataFrame: One row per bootstrap sample, with columns "Sample",
-            "Endpoint" (``MACRO_ENDPOINT_LABEL`` for every row), and the macro-averaged
-            value of each metric in ``metrics`` for that sample.
+    Returns
+    -------
+    pd.DataFrame
+        One row per bootstrap sample, with columns "Sample", "Endpoint"
+        (``MACRO_ENDPOINT_LABEL`` for every row), and the macro-averaged value of
+        each metric in ``metrics`` for that sample.
 
     """
     grouped = all_endpoint_bootstrap_results.groupby("Sample")
@@ -301,13 +315,17 @@ def pivot_endpoint_results_wide(by_endpoint_results: pd.DataFrame) -> pd.DataFra
     is always a bare metric name (e.g. ``"ST-RAE"``) regardless of which endpoint a
     given leaderboard targets.
 
-    Args:
-        by_endpoint_results (pd.DataFrame): Per-endpoint mean/std results, indexed by
-            endpoint name (including ``MACRO_ENDPOINT_LABEL``).
+    Parameters
+    ----------
+    by_endpoint_results : pd.DataFrame
+        Per-endpoint mean/std results, indexed by endpoint name (including
+        ``MACRO_ENDPOINT_LABEL``).
 
-    Returns:
-        pd.DataFrame: A single-row DataFrame with one column per
-            endpoint/metric/statistic combination.
+    Returns
+    -------
+    pd.DataFrame
+        A single-row DataFrame with one column per endpoint/metric/statistic
+        combination.
 
     """
     wide_row: dict[str, float] = {}
@@ -322,13 +340,15 @@ def average_bootstrap_results_by_endpoint(
 ) -> pd.DataFrame:
     """Calculate the average results of the bootstrapped samples for each endpoint.
 
-    Args:
-        all_endpoint_bootstrap_results (pd.DataFrame): A DataFrame containing the
-            bootstrapped results for each endpoint.
+    Parameters
+    ----------
+    all_endpoint_bootstrap_results : pd.DataFrame
+        A DataFrame containing the bootstrapped results for each endpoint.
 
-    Returns:
-        pd.DataFrame: A DataFrame containing the average results of the bootstrapped
-                      samples.
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the average results of the bootstrapped samples.
 
     """
     logger.info("Calculating average bootstrap results by endpoint")
@@ -364,38 +384,48 @@ def bootstrap_metrics(
 ) -> pd.DataFrame:
     """Calculate bootstrap metrics given predicted and true values.
 
-    Args:
-        y_pred (np.ndarray): The predicted values.
-        y_true (np.ndarray): The true values.
-        endpoint (str): The endpoint for which the metrics are being calculated.
-        n_bootstrap_samples (int): The number of bootstrap samples to generate.
-        metrics (list[tuple[str, Callable]]): The ``(name, func)`` metric list to
-            compute for every bootstrap sample — ``ACTIVITY_METRICS`` for a
-            regression endpoint, ``CLASSIFICATION_METRICS`` for a classification
-            endpoint. Defaults to ``ACTIVITY_METRICS``.
-        y_true_upper (np.ndarray | None): Per-compound upper credible-interval bound
-            for ``y_true``, aligned with ``y_true``/``y_pred``. Only consumed by
-            metrics whose signature accepts ``y_true_upper``/``y_true_lower`` (see
-            ``_metric_needs_credible_interval_bounds``), e.g. the soft-thresholded
-            RAE metric — ignored by every other metric. Required if ``metrics``
-            includes such a metric, otherwise optional.
-        y_true_lower (np.ndarray | None): Per-compound lower credible-interval bound,
-            counterpart to ``y_true_upper``.
+    Parameters
+    ----------
+    y_pred : np.ndarray
+        The predicted values.
+    y_true : np.ndarray
+        The true values.
+    endpoint : str
+        The endpoint for which the metrics are being calculated.
+    n_bootstrap_samples : int
+        The number of bootstrap samples to generate.
+    metrics : list[tuple[str, Callable]]
+        The ``(name, func)`` metric list to compute for every bootstrap sample —
+        ``ACTIVITY_METRICS`` for a regression endpoint, ``CLASSIFICATION_METRICS``
+        for a classification endpoint. Defaults to ``ACTIVITY_METRICS``.
+    y_true_upper : np.ndarray | None
+        Per-compound upper credible-interval bound for ``y_true``, aligned with
+        ``y_true``/``y_pred``. Only consumed by metrics whose signature accepts
+        ``y_true_upper``/``y_true_lower`` (see
+        ``_metric_needs_credible_interval_bounds``), e.g. the soft-thresholded RAE
+        metric — ignored by every other metric. Required if ``metrics`` includes
+        such a metric, otherwise optional.
+    y_true_lower : np.ndarray | None
+        Per-compound lower credible-interval bound, counterpart to
+        ``y_true_upper``.
 
-    Returns:
-        pd.DataFrame: A DataFrame containing the bootstrap metrics for the given
-                      endpoint.
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the bootstrap metrics for the given endpoint.
 
-    Raises:
-        RuntimeError: If a metric cannot be calculated, or returns a non-finite
-            value with no entry in ``METRIC_NAN_FALLBACK``, for any bootstrap sample
-            — rather than silently scoring that sample as 0 (which would misrepresent
-            a real failure as a perfect score for error metrics like MAE/ST-RAE).
-            Metrics listed in ``METRIC_NAN_FALLBACK`` (e.g. Spearman_R/Kendall_Tau,
-            which are mathematically undefined for a zero-variance bootstrap sample —
-            such as a submission predicting the same value for every compound) use
-            that fallback value instead of raising. This also covers a metric that
-            needs credible-interval bounds (e.g. ST-RAE) when none were supplied.
+    Raises
+    ------
+    RuntimeError
+        If a metric cannot be calculated, or returns a non-finite value with no
+        entry in ``METRIC_NAN_FALLBACK``, for any bootstrap sample — rather than
+        silently scoring that sample as 0 (which would misrepresent a real
+        failure as a perfect score for error metrics like MAE/ST-RAE). Metrics
+        listed in ``METRIC_NAN_FALLBACK`` (e.g. Spearman_R/Kendall_Tau, which are
+        mathematically undefined for a zero-variance bootstrap sample — such as a
+        submission predicting the same value for every compound) use that
+        fallback value instead of raising. This also covers a metric that needs
+        credible-interval bounds (e.g. ST-RAE) when none were supplied.
 
     """
     metrics_with_bounds_flag = [
@@ -473,25 +503,30 @@ def score_single_structure(
     Returns NaN for every metric if scoring fails for any reason, so that a
     single bad submission file does not abort the full evaluation.
 
-    Args:
-        model_path (str): Filesystem path to the predicted complex PDB file.
-        ref_path (str): Filesystem path to the reference complex PDB file.
-        max_pb_failures (int): Maximum number of PoseBusters checks the predicted
-            ligand may fail before its scores are zeroed. Defaults to
-            ``POSEBUSTERS_MAX_FAILURES``.
-        smiles (str | None): Ground-truth SMILES for the ligand, used to assign
-            correct bond orders before running PoseBusters. When ``None``, bond
-            orders are left as parsed (all single), which may cause false failures
-            on geometry and energy checks.
+    Parameters
+    ----------
+    model_path : str
+        Filesystem path to the predicted complex PDB file.
+    ref_path : str
+        Filesystem path to the reference complex PDB file.
+    max_pb_failures : int
+        Maximum number of PoseBusters checks the predicted ligand may fail before
+        its scores are zeroed. Defaults to ``POSEBUSTERS_MAX_FAILURES``.
+    smiles : str | None
+        Ground-truth SMILES for the ligand, used to assign correct bond orders
+        before running PoseBusters. When ``None``, bond orders are left as parsed
+        (all single), which may cause false failures on geometry and energy
+        checks.
 
-    Returns:
-        tuple[dict[str, float], list[str]]: A pair of (scores, failed_pb_checks).
-            ``scores`` maps metric name to value (keys: ``LDDT-PLI``, ``BiSyRMSD``,
-            ``LDDT-LP``); any metric that cannot be computed is ``np.nan``.
-            ``failed_pb_checks`` is the sorted list of PoseBusters check names that
-            failed when the failure count exceeds ``max_pb_failures``; empty when the
-            pose passes, when PoseBusters is skipped due to parse errors, or when
-            scoring fails entirely.
+    Returns
+    -------
+    tuple[dict[str, float], list[str]]
+        A pair of (scores, failed_pb_checks). ``scores`` maps metric name to
+        value (keys: ``LDDT-PLI``, ``BiSyRMSD``, ``LDDT-LP``); any metric that
+        cannot be computed is ``np.nan``. ``failed_pb_checks`` is the sorted list
+        of PoseBusters check names that failed when the failure count exceeds
+        ``max_pb_failures``; empty when the pose passes, when PoseBusters is
+        skipped due to parse errors, or when scoring fails entirely.
 
     """
     try:
@@ -722,27 +757,31 @@ def score_structure_predictions(
     before aggregation (LDDT-PLI=0, LDDT-LP=0, BiSyRMSD=``BISYRMSD_NAN_PENALTY``);
     those compounds still count as covered (coverage=1.0) since OST scored them.
 
-    Args:
-        predicted_structures (dict[str, str]): Mapping from molecule ID to
-            filesystem path of the predicted PDB file.
-        ground_truth_structures (dict[str, str]): Mapping from molecule ID
-            to filesystem path of the reference PDB file.
-        max_pb_failures (int): Maximum number of PoseBusters checks a ligand
-            may fail before its scores are zeroed. Forwarded to
-            ``score_single_structure``. Defaults to ``POSEBUSTERS_MAX_FAILURES``.
-        smiles_map (dict[str, str] | None): Optional mapping from molecule ID
-            to ground-truth SMILES, forwarded to ``score_single_structure`` for
-            bond-order assignment before PoseBusters runs. When ``None``, bond
-            orders are left as parsed from PDB (all single).
+    Parameters
+    ----------
+    predicted_structures : dict[str, str]
+        Mapping from molecule ID to filesystem path of the predicted PDB file.
+    ground_truth_structures : dict[str, str]
+        Mapping from molecule ID to filesystem path of the reference PDB file.
+    max_pb_failures : int
+        Maximum number of PoseBusters checks a ligand may fail before its scores
+        are zeroed. Forwarded to ``score_single_structure``. Defaults to
+        ``POSEBUSTERS_MAX_FAILURES``.
+    smiles_map : dict[str, str] | None
+        Optional mapping from molecule ID to ground-truth SMILES, forwarded to
+        ``score_single_structure`` for bond-order assignment before PoseBusters
+        runs. When ``None``, bond orders are left as parsed from PDB (all
+        single).
 
-    Returns:
-        tuple[pd.DataFrame, dict[str, list[str]]]: A pair of
-            (per_compound_df, pb_failures) where per_compound_df has columns
-            ``Molecule_Name``, ``LDDT-PLI``, ``BiSyRMSD``, ``LDDT-LP``,
-            ``coverage`` (1.0 if successfully matched, 0.0 otherwise), and
-            pb_failures maps molecule ID to the sorted list of PoseBusters
-            check names that caused its scores to be zeroed. Only compounds that
-            exceed ``max_pb_failures`` appear in pb_failures.
+    Returns
+    -------
+    tuple[pd.DataFrame, dict[str, list[str]]]
+        A pair of (per_compound_df, pb_failures) where per_compound_df has
+        columns ``Molecule_Name``, ``LDDT-PLI``, ``BiSyRMSD``, ``LDDT-LP``,
+        ``coverage`` (1.0 if successfully matched, 0.0 otherwise), and
+        pb_failures maps molecule ID to the sorted list of PoseBusters check
+        names that caused its scores to be zeroed. Only compounds that exceed
+        ``max_pb_failures`` appear in pb_failures.
 
     """
     logger.info(
@@ -802,15 +841,19 @@ def bootstrap_structure_metrics(
     is not bootstrapped — it is added to ``averaged_df`` separately in
     ``score_structure_submission``.
 
-    Args:
-        per_compound_df (pd.DataFrame): Output of ``score_structure_predictions``
-            — one row per compound, columns ``LDDT-PLI``, ``BiSyRMSD``,
-            ``LDDT-LP``, ``coverage``.
-        n_bootstrap_samples (int): Number of bootstrap iterations.
+    Parameters
+    ----------
+    per_compound_df : pd.DataFrame
+        Output of ``score_structure_predictions`` — one row per compound,
+        columns ``LDDT-PLI``, ``BiSyRMSD``, ``LDDT-LP``, ``coverage``.
+    n_bootstrap_samples : int
+        Number of bootstrap iterations.
 
-    Returns:
-        pd.DataFrame: Bootstrap results with columns:
-            ``Sample``, ``Endpoint``, ``LDDT-PLI``, ``BiSyRMSD``, ``LDDT-LP``.
+    Returns
+    -------
+    pd.DataFrame
+        Bootstrap results with columns: ``Sample``, ``Endpoint``, ``LDDT-PLI``,
+        ``BiSyRMSD``, ``LDDT-LP``.
 
     """
     _BOOTSTRAP_COLS = STRUCTURE_METRICS

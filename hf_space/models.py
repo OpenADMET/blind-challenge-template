@@ -15,26 +15,43 @@ class Submission(BaseModel):
     file. All fields are stored; only non-private fields are ever surfaced on
     the leaderboard.
 
-    Attributes:
-        submission_id: Auto-generated UUID, used as the S3 key component.
-        submitted_at: UTC timestamp of submission.
-        username: HuggingFace username (required, used for deduplication).
-        safe_username: Sanitised username for use in S3 keys and file paths.
-        user_alias: Optional display alias for anonymous submissions.
-        anonymous: If True, display user_alias on leaderboard instead of username.
-        participant_name: Real name — stored privately, never displayed.
-        discord_username: Discord handle — stored privately.
-        email: Contact email — stored privately.
-        affiliation: Institutional affiliation — stored privately.
-        model_report_link: URL to method report (required before deadline).
-        include_in_publication: Opt-in for Challenge publication authorship.
-        used_proprietary_data: Whether proprietary data was used in training.
-        open_source_code: Whether the participant's code is open-source and
-            publicly available.
-        track: Competition track.
-        filename: Original uploaded filename.
-        s3_key: Full S3 object key for the uploaded prediction file.
-            Populated by submission_store.upload_submission() after upload.
+    Attributes
+    ----------
+    submission_id
+        Auto-generated UUID, used as the S3 key component.
+    submitted_at
+        UTC timestamp of submission.
+    username
+        HuggingFace username (required, used for deduplication).
+    safe_username
+        Sanitised username for use in S3 keys and file paths.
+    user_alias
+        Optional display alias for anonymous submissions.
+    anonymous
+        If True, display user_alias on leaderboard instead of username.
+    participant_name
+        Real name — stored privately, never displayed.
+    discord_username
+        Discord handle — stored privately.
+    email
+        Contact email — stored privately.
+    affiliation
+        Institutional affiliation — stored privately.
+    model_report_link
+        URL to method report (required before deadline).
+    include_in_publication
+        Opt-in for Challenge publication authorship.
+    used_proprietary_data
+        Whether proprietary data was used in training.
+    open_source_code
+        Whether the participant's code is open-source and publicly available.
+    track
+        Competition track.
+    filename
+        Original uploaded filename.
+    s3_key
+        Full S3 object key for the uploaded prediction file. Populated by
+        submission_store.upload_submission() after upload.
 
     """
 

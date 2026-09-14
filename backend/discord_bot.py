@@ -43,8 +43,10 @@ VALID_SUBMISSION_RESPONSES = [
 def get_discord_webhook() -> str | None:
     """Get the Discord webhook URL from AWS Secrets Manager.
 
-    Returns:
-        str | None: Discord webhook URL if available, otherwise None.
+    Returns
+    -------
+    str | None
+        Discord webhook URL if available, otherwise None.
 
     """
     secret_name = os.environ.get("DISCORD_WEBHOOK_SECRET_NAME")
@@ -86,16 +88,18 @@ def prepare_discord_message(
 ) -> tuple[int, str, str | None]:
     """Prepare a Discord post with feedback on a submission.
 
-    Args:
-        validation_metadata_df (pd.DataFrame): Validation metadata for the specified
-                                               submission.
-        validation_result (ValidationResult): The result of the submission validation,
-                                              including validity and any errors.
+    Parameters
+    ----------
+    validation_metadata_df : pd.DataFrame
+        Validation metadata for the specified submission.
+    validation_result : ValidationResult
+        The result of the submission validation, including validity and any errors.
 
-    Returns:
-        tuple[int, str, str | None]: A tuple containing the color code for the
-                                     Discord embed, the content of the message,
-                                     and an optional string with long error details.
+    Returns
+    -------
+    tuple[int, str, str | None]
+        A tuple containing the color code for the Discord embed, the content of the
+        message, and an optional string with long error details.
 
     """
     valid, name, time, track = _unpack_metadata(validation_metadata_df)
@@ -162,11 +166,12 @@ def post_result_to_discord(
 ) -> None:
     """Post the result of a submission validation to a Discord channel using a webhook.
 
-    Args:
-        validation_metadata_df (pd.DataFrame): Validation metadata for the specified
-                                               submission.
-        validation_result (ValidationResult): The result of the submission validation,
-                                              including validity and any errors.
+    Parameters
+    ----------
+    validation_metadata_df : pd.DataFrame
+        Validation metadata for the specified submission.
+    validation_result : ValidationResult
+        The result of the submission validation, including validity and any errors.
 
     """
     if not DISCORD_NOTIFICATIONS:

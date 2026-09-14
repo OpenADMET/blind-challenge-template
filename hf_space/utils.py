@@ -89,25 +89,29 @@ def check_page_exists(
     ``_is_safe_public_url`` before it is requested, closing off SSRF via a
     redirect to an internal address.
 
-    Params:
-        url (str): The URL of the page to check.
-        delay (float, optional): Seconds to wait until submitting another request.
-            Defaults to 0.
-        max_retries (int, optional): Maximum number of times to retry on a 429 error.
-            Defaults to 3.
-        current_retries (int, optional): Current number of retries performed (internal
-            counter). Defaults to 0.
-        restrict_to_public (bool, optional): Reject hosts that resolve to a
-            private/loopback/internal address. Only meaningful protection when
-            ``url`` (or its host) is attacker-controlled — e.g. a user-supplied
-            link. Should be disabled for calls against a hardcoded, trusted
-            domain (e.g. huggingface.co), since some platforms resolve their own
-            domain to an internal address for intra-network callers (split-horizon
-            DNS), which this check would otherwise incorrectly reject. Defaults to
-            True.
+    Parameters
+    ----------
+    url : str
+        The URL of the page to check.
+    delay : float, optional
+        Seconds to wait until submitting another request. Defaults to 0.
+    max_retries : int, optional
+        Maximum number of times to retry on a 429 error. Defaults to 3.
+    current_retries : int, optional
+        Current number of retries performed (internal counter). Defaults to 0.
+    restrict_to_public : bool, optional
+        Reject hosts that resolve to a private/loopback/internal address. Only
+        meaningful protection when ``url`` (or its host) is attacker-controlled —
+        e.g. a user-supplied link. Should be disabled for calls against a
+        hardcoded, trusted domain (e.g. huggingface.co), since some platforms
+        resolve their own domain to an internal address for intra-network callers
+        (split-horizon DNS), which this check would otherwise incorrectly reject.
+        Defaults to True.
 
-    Returns:
-        bool: True if the page exists (status code 200), False otherwise.
+    Returns
+    -------
+    bool
+        True if the page exists (status code 200), False otherwise.
 
     """
     safe_url = str(url).strip()

@@ -79,8 +79,10 @@ def _generate_track_leaderboards(
     track (e.g. regression) produces one leaderboard per endpoint plus the
     macro-ranked master leaderboard — see ``aws_leaderboards.create_track_leaderboards``.
 
-    Returns:
-        dict: Status message per leaderboard variant.
+    Returns
+    -------
+    dict
+        Status message per leaderboard variant.
 
     """
     leaderboards = create_track_leaderboards(
@@ -121,15 +123,20 @@ def _generate_track_leaderboards(
 def _save_leaderboard_if_changed(leaderboard, track: str, endpoint_slug: str) -> dict:
     """Conditionally save one already-built leaderboard variant.
 
-    Args:
-        leaderboard (pd.DataFrame): The leaderboard DataFrame, as built by
-            ``create_track_leaderboards``.
-        track (str): "regression", "classification", or "structure" — used for
-            logging and the S3 path.
-        endpoint_slug (str): S3 filename slug for this variant.
+    Parameters
+    ----------
+    leaderboard : pd.DataFrame
+        The leaderboard DataFrame, as built by ``create_track_leaderboards``.
+    track : str
+        "regression", "classification", or "structure" — used for logging and the
+        S3 path.
+    endpoint_slug : str
+        S3 filename slug for this variant.
 
-    Returns:
-        dict: Status message with row count.
+    Returns
+    -------
+    dict
+        Status message with row count.
 
     """
     if leaderboard.empty:

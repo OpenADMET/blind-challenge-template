@@ -66,16 +66,19 @@ def format_leaderboard_uri(
 ) -> str:
     """Format the leaderboard URI based on track, phase, and endpoint.
 
-    Args:
-        track (str): REGRESSION_TRACK, CLASSIFICATION_TRACK, or STRUCTURE_TRACK.
-        leaderboard_type (str): "live", "interim", or "final".
-        endpoint_slug (str): For regression/classification, a REGRESSION_ENDPOINTS /
-            CLASSIFICATION_ENDPOINTS entry (e.g. "ENDPOINT_1") to
-            load that endpoint's own leaderboard instead of the track's master
-            (macro-ranked) leaderboard. Defaults to ``MACRO_ENDPOINT_LABEL`` ("MA"),
-            which loads the master.
-        version (str): "latest" (default), or an ISO-format timestamp for a dated
-            snapshot.
+    Parameters
+    ----------
+    track : str
+        REGRESSION_TRACK, CLASSIFICATION_TRACK, or STRUCTURE_TRACK.
+    leaderboard_type : str
+        "live", "interim", or "final".
+    endpoint_slug : str
+        For regression/classification, a REGRESSION_ENDPOINTS /
+        CLASSIFICATION_ENDPOINTS entry (e.g. "ENDPOINT_1") to load that endpoint's
+        own leaderboard instead of the track's master (macro-ranked) leaderboard.
+        Defaults to ``MACRO_ENDPOINT_LABEL`` ("MA"), which loads the master.
+    version : str
+        "latest" (default), or an ISO-format timestamp for a dated snapshot.
 
     """
     if track not in [REGRESSION_TRACK, CLASSIFICATION_TRACK, STRUCTURE_TRACK]:
@@ -160,17 +163,24 @@ def _prepare_activity_df(
     master, "" for endpoint tabs whose own tab title already identifies the endpoint)
     are the only things that differ between calls.
 
-    Args:
-        df (pd.DataFrame): Raw leaderboard DataFrame from S3.
-        metric_display_names (dict[str, str]): Raw metric name -> display label,
-            in display order (primary/sort metric first).
-        metric_prefix (str): Prefix for the metric column headers, e.g. "MA-".
-        for_download (bool): If True, keep mean and std as separate columns with
-            full precision for the downloadable CSV. If False (default), drop std
-            columns and round means to 4 dp for the live leaderboard.
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw leaderboard DataFrame from S3.
+    metric_display_names : dict[str, str]
+        Raw metric name -> display label, in display order (primary/sort metric
+        first).
+    metric_prefix : str
+        Prefix for the metric column headers, e.g. "MA-".
+    for_download : bool
+        If True, keep mean and std as separate columns with full precision for the
+        downloadable CSV. If False (default), drop std columns and round means to
+        4 dp for the live leaderboard.
 
-    Returns:
-        pd.DataFrame: Prepared DataFrame.
+    Returns
+    -------
+    pd.DataFrame
+        Prepared DataFrame.
 
     """
     df = df.sort_values("rank", ascending=True).reset_index(drop=True)
@@ -221,14 +231,19 @@ def _prepare_activity_df(
 def _prepare_structure_df(df: pd.DataFrame, for_download: bool = False) -> pd.DataFrame:
     """Sort and rename structure leaderboard columns (no HTML).
 
-    Args:
-        df (pd.DataFrame): Raw leaderboard DataFrame from S3.
-        for_download (bool): If True, collapse mean/std pairs into 'XX±YY' strings
-            for the downloadable CSV. If False (default), keep mean values as plain
-            floats for numeric sorting in the live leaderboard.
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw leaderboard DataFrame from S3.
+    for_download : bool
+        If True, collapse mean/std pairs into 'XX±YY' strings for the downloadable
+        CSV. If False (default), keep mean values as plain floats for numeric
+        sorting in the live leaderboard.
 
-    Returns:
-        pd.DataFrame: Prepared DataFrame.
+    Returns
+    -------
+    pd.DataFrame
+        Prepared DataFrame.
 
     """
     df = df.sort_values("LDDT-PLI_mean", ascending=False).reset_index(drop=True)
@@ -692,13 +707,15 @@ def _add_leaderboard_tabs(leaderboard_type: str, demo: gr.Blocks | None = None):
     """Add the regression, classification, and structure leaderboard tabs to the
     Gradio app.
 
-    Args:
-        leaderboard_type (str): The leaderboard_type of the leaderboard to display.
-            One of "live", "interim", or "final". Both "interim" and "final" are
-            static leaderboards, while "live" is updated every 30 seconds and on
-            every page load.
-        demo (gr.Blocks | None): The app's Blocks instance, needed to wire the
-            page-load refresh. Required when ``leaderboard_type == "live"``.
+    Parameters
+    ----------
+    leaderboard_type : str
+        The leaderboard_type of the leaderboard to display. One of "live",
+        "interim", or "final". Both "interim" and "final" are static leaderboards,
+        while "live" is updated every 30 seconds and on every page load.
+    demo : gr.Blocks | None
+        The app's Blocks instance, needed to wire the page-load refresh. Required
+        when ``leaderboard_type == "live"``.
 
     """
     if leaderboard_type == "live":

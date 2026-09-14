@@ -36,17 +36,20 @@ def validate(
 ) -> None:
     """Validate submission files.
 
-    Args:
-        regression_predictions (str): Path to the regression predictions parquet or
-                                      csv file.
-        classification_predictions (str): Path to the classification predictions
-                                          parquet or csv file.
-        structure_predictions (str): Path to the structure predictions zip file.
+    Parameters
+    ----------
+    regression_predictions : str
+        Path to the regression predictions parquet or csv file.
+    classification_predictions : str
+        Path to the classification predictions parquet or csv file.
+    structure_predictions : str
+        Path to the structure predictions zip file.
 
-    Raises:
-        click.UsageError: If none of regression_predictions,
-                          classification_predictions, or structure_predictions is
-                          provided.
+    Raises
+    ------
+    click.UsageError
+        If none of regression_predictions, classification_predictions, or
+        structure_predictions is provided.
 
     """
     if (

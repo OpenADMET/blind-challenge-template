@@ -25,11 +25,15 @@ def current_phase(current_time: datetime) -> int:
     During phase 1, only the training data is available. During phase 2, analog set 1 is
     unblinded. After phase 2 (phase 0), all data is unblinded.
 
-    Args:
-        current_time (datetime): The current time to use for determining the phase.
+    Parameters
+    ----------
+    current_time : datetime
+        The current time to use for determining the phase.
 
-    Returns:
-        int: The current phase of the challenge (1, 2, or 0 if both phases are over).
+    Returns
+    -------
+    int
+        The current phase of the challenge (1, 2, or 0 if both phases are over).
 
     """
     if current_time.tzinfo is None:
@@ -58,11 +62,15 @@ def current_phase(current_time: datetime) -> int:
 def clip_and_log_transform(y: np.ndarray) -> np.ndarray:
     """Clip the input array to zero then apply a log10(y + 1) transformation.
 
-    Args:
-        y (np.ndarray): The input array to be transformed.
+    Parameters
+    ----------
+    y : np.ndarray
+        The input array to be transformed.
 
-    Returns:
-        np.ndarray: The transformed array.
+    Returns
+    -------
+    np.ndarray
+        The transformed array.
 
     """
     y = np.clip(y, a_min=0, a_max=None)
@@ -79,13 +87,17 @@ def bootstrap_sampling(
     samples. Best practices for bootstrap sampling involve sampling the same number of
     samples as the original dataset, with replacement, at least 1000 times.
 
-    Args:
-        original_dataset_size (int): The size of the original dataset.
-        n_bootstrap_repeats (int): The number of bootstrap samples to generate.
-                                   Default is 1000.
+    Parameters
+    ----------
+    original_dataset_size : int
+        The size of the original dataset.
+    n_bootstrap_repeats : int
+        The number of bootstrap samples to generate. Default is 1000.
 
-    Returns:
-        np.ndarray: An array of bootstrap sample indices.
+    Returns
+    -------
+    np.ndarray
+        An array of bootstrap sample indices.
 
     """
     rng = np.random.default_rng(seed=BOOTSTRAP_SEED)
@@ -138,25 +150,29 @@ def check_page_exists(
     ``_is_safe_public_url`` before it is requested, closing off SSRF via a
     redirect to an internal address.
 
-    Params:
-        url (str): The URL of the page to check.
-        delay (float, optional): Seconds to wait until submitting another request.
-            Defaults to 0.
-        max_retries (int, optional): Maximum number of times to retry on a 429 error.
-            Defaults to 3.
-        current_retries (int, optional): Current number of retries performed (internal
-            counter). Defaults to 0.
-        restrict_to_public (bool, optional): Reject hosts that resolve to a
-            private/loopback/internal address. Only meaningful protection when
-            ``url`` (or its host) is attacker-controlled — e.g. a user-supplied
-            link. Should be disabled for calls against a hardcoded, trusted
-            domain (e.g. huggingface.co), since some platforms resolve their own
-            domain to an internal address for intra-network callers (split-horizon
-            DNS), which this check would otherwise incorrectly reject. Defaults to
-            True.
+    Parameters
+    ----------
+    url : str
+        The URL of the page to check.
+    delay : float, optional
+        Seconds to wait until submitting another request. Defaults to 0.
+    max_retries : int, optional
+        Maximum number of times to retry on a 429 error. Defaults to 3.
+    current_retries : int, optional
+        Current number of retries performed (internal counter). Defaults to 0.
+    restrict_to_public : bool, optional
+        Reject hosts that resolve to a private/loopback/internal address. Only
+        meaningful protection when ``url`` (or its host) is attacker-controlled —
+        e.g. a user-supplied link. Should be disabled for calls against a
+        hardcoded, trusted domain (e.g. huggingface.co), since some platforms
+        resolve their own domain to an internal address for intra-network callers
+        (split-horizon DNS), which this check would otherwise incorrectly reject.
+        Defaults to True.
 
-    Returns:
-        bool: True if the page exists (status code 200), False otherwise.
+    Returns
+    -------
+    bool
+        True if the page exists (status code 200), False otherwise.
 
     """
     logger.debug("Checking if page exists at URL: {}", url)

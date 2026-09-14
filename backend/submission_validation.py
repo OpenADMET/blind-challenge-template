@@ -189,12 +189,17 @@ def validate_regression_submission(
 ) -> ValidationResult:
     """Validate a submitted regression (pIC50) predictions file using Pandera.
 
-    Args:
-        regression_predictions (pd.DataFrame): The submitted regression predictions.
-        expected_ids (set[str] | None): Expected molecule IDs. Default is None.
+    Parameters
+    ----------
+    regression_predictions : pd.DataFrame
+        The submitted regression predictions.
+    expected_ids : set[str] | None
+        Expected molecule IDs. Default is None.
 
-    Returns:
-        ValidationResult: An object containing the validation status and any errors.
+    Returns
+    -------
+    ValidationResult
+        An object containing the validation status and any errors.
 
     """
     return _validate_tabular_submission(
@@ -208,13 +213,17 @@ def validate_classification_submission(
 ) -> ValidationResult:
     """Validate a submitted classification predictions file using Pandera.
 
-    Args:
-        classification_predictions (pd.DataFrame): The submitted classification
-            predictions.
-        expected_ids (set[str] | None): Expected molecule IDs. Default is None.
+    Parameters
+    ----------
+    classification_predictions : pd.DataFrame
+        The submitted classification predictions.
+    expected_ids : set[str] | None
+        Expected molecule IDs. Default is None.
 
-    Returns:
-        ValidationResult: An object containing the validation status and any errors.
+    Returns
+    -------
+    ValidationResult
+        An object containing the validation status and any errors.
 
     """
     return _validate_tabular_submission(
@@ -228,15 +237,19 @@ def validate_structure_submission(
 ) -> ValidationResult:
     """Validate the submitted zip file of structure predictions.
 
-    Args:
-        structure_predictions_file (Path): The path to the submitted structure
-                                           predictions file.
-        expected_ids (set[str] | None): Expected molecule IDs (file stems). When
-            provided, the zip must contain exactly these IDs — no more, no less.
-            When None, only the count is checked against ``STRUCTURE_DATASET_SIZE``.
+    Parameters
+    ----------
+    structure_predictions_file : Path
+        The path to the submitted structure predictions file.
+    expected_ids : set[str] | None
+        Expected molecule IDs (file stems). When provided, the zip must contain
+        exactly these IDs — no more, no less. When None, only the count is checked
+        against ``STRUCTURE_DATASET_SIZE``.
 
-    Returns:
-        ValidationResult: An object containing the validation status and any errors.
+    Returns
+    -------
+    ValidationResult
+        An object containing the validation status and any errors.
 
     """
     validation_result = ValidationResult()

@@ -11,12 +11,17 @@ _MIN_CONFIDENCE_INTERVAL = 1e-6
 def rae(y_true: pd.Series | np.ndarray, y_pred: pd.Series | np.ndarray) -> float:
     """Relative absolute error (RAE) metric for regression tasks.
 
-    Args:
-        y_true (pd.Series | np.ndarray): True values.
-        y_pred (pd.Series | np.ndarray): Predicted values.
+    Parameters
+    ----------
+    y_true : pd.Series | np.ndarray
+        True values.
+    y_pred : pd.Series | np.ndarray
+        Predicted values.
 
-    Returns:
-        float: The relative absolute error (RAE) score.
+    Returns
+    -------
+    float
+        The relative absolute error (RAE) score.
 
     """
     return np.sum(np.abs(y_true - y_pred)) / np.sum(np.abs(y_true - np.mean(y_true)))
@@ -42,21 +47,26 @@ def _resolve_bounds(
     ``rae_soft_threshold_absolute_error`` — makes soft-thresholding a no-op and
     recovers the plain (non-thresholded) behaviour exactly.
 
-    Args:
-        y_true (pd.Series | np.ndarray): True values.
-        y_true_upper (pd.Series | np.ndarray | None): Optional upper bounds for true
-            values.
-        y_true_lower (pd.Series | np.ndarray | None): Optional lower bounds for true
-            values.
-        confidence_interval (float | pd.Series | np.ndarray | None): Optional
-            confidence interval (full width) for true values.
+    Parameters
+    ----------
+    y_true : pd.Series | np.ndarray
+        True values.
+    y_true_upper : pd.Series | np.ndarray | None
+        Optional upper bounds for true values.
+    y_true_lower : pd.Series | np.ndarray | None
+        Optional lower bounds for true values.
+    confidence_interval : float | pd.Series | np.ndarray | None
+        Optional confidence interval (full width) for true values.
 
-    Returns:
-        tuple[pd.Series | np.ndarray, pd.Series | np.ndarray]: The resolved
-            ``(y_true_lower, y_true_upper)`` bounds.
+    Returns
+    -------
+    tuple[pd.Series | np.ndarray, pd.Series | np.ndarray]
+        The resolved ``(y_true_lower, y_true_upper)`` bounds.
 
-    Raises:
-        ValueError: If both explicit bounds and a confidence interval are provided.
+    Raises
+    ------
+    ValueError
+        If both explicit bounds and a confidence interval are provided.
 
     """
     if (
@@ -111,22 +121,31 @@ def rae_soft_threshold_absolute_error(
     ``1.0`` means the model is exactly as good as always predicting the mean, under
     this tolerance-band error function.
 
-    Args:
-        y_true (pd.Series | np.ndarray): True values.
-        y_pred (pd.Series | np.ndarray): Predicted values.
-        y_true_upper (pd.Series | np.ndarray | None): Optional upper bounds for true
-            values. Defaults to ``y_true`` (no tolerance above) if omitted.
-        y_true_lower (pd.Series | np.ndarray | None): Optional lower bounds for true
-            values. Defaults to ``y_true`` (no tolerance below) if omitted.
-        confidence_interval (float | pd.Series | np.ndarray | None): Optional
-            confidence interval (full width) for true values.
+    Parameters
+    ----------
+    y_true : pd.Series | np.ndarray
+        True values.
+    y_pred : pd.Series | np.ndarray
+        Predicted values.
+    y_true_upper : pd.Series | np.ndarray | None
+        Optional upper bounds for true values. Defaults to ``y_true`` (no tolerance
+        above) if omitted.
+    y_true_lower : pd.Series | np.ndarray | None
+        Optional lower bounds for true values. Defaults to ``y_true`` (no tolerance
+        below) if omitted.
+    confidence_interval : float | pd.Series | np.ndarray | None
+        Optional confidence interval (full width) for true values.
 
-    Returns:
-        float: The relative absolute error (RAE) score, with soft-thresholded
-            absolute error in both the model error and the naive-baseline error.
+    Returns
+    -------
+    float
+        The relative absolute error (RAE) score, with soft-thresholded absolute error
+        in both the model error and the naive-baseline error.
 
-    Raises:
-        ValueError: If both explicit bounds and a confidence interval are provided.
+    Raises
+    ------
+    ValueError
+        If both explicit bounds and a confidence interval are provided.
 
     """
     y_true_lower, y_true_upper = _resolve_bounds(
@@ -153,17 +172,22 @@ def _weighted_absolute_error_below_threshold(
 ) -> pd.Series | np.ndarray:
     """Per-point absolute error, downweighted where both y_true and y_pred are below threshold.
 
-    Args:
-        y_true (pd.Series | np.ndarray): True values.
-        y_pred (pd.Series | np.ndarray | float): Predicted values, or a single constant
-            prediction (e.g. ``mean(y_true)`` for a naive baseline) broadcast against
-            ``y_true``.
-        threshold (float): The threshold below which the absolute error is weighted.
-        weighting (float): The factor by which to weight the absolute error below the
-            threshold.
+    Parameters
+    ----------
+    y_true : pd.Series | np.ndarray
+        True values.
+    y_pred : pd.Series | np.ndarray | float
+        Predicted values, or a single constant prediction (e.g. ``mean(y_true)`` for
+        a naive baseline) broadcast against ``y_true``.
+    threshold : float
+        The threshold below which the absolute error is weighted.
+    weighting : float
+        The factor by which to weight the absolute error below the threshold.
 
-    Returns:
-        pd.Series | np.ndarray: Per-point weighted absolute error.
+    Returns
+    -------
+    pd.Series | np.ndarray
+        Per-point weighted absolute error.
 
     """
     abs_error = np.abs(y_true - y_pred)
@@ -196,17 +220,23 @@ def rae_weight_below_threshold(
     below-threshold condition is rarely satisfied and the denominator ends up close to
     the unweighted RAE denominator — the weighting mostly changes the numerator.
 
-    Args:
-        y_true (pd.Series | np.ndarray): True values.
-        y_pred (pd.Series | np.ndarray): Predicted values.
-        threshold (float): The threshold below which the absolute error is weighted.
-            Defaults to 4.
-        weighting (float): The factor by which to weight the absolute error below the
-            threshold. Defaults to 0.25.
+    Parameters
+    ----------
+    y_true : pd.Series | np.ndarray
+        True values.
+    y_pred : pd.Series | np.ndarray
+        Predicted values.
+    threshold : float
+        The threshold below which the absolute error is weighted. Defaults to 4.
+    weighting : float
+        The factor by which to weight the absolute error below the threshold.
+        Defaults to 0.25.
 
-    Returns:
-        float: The relative absolute error (RAE) score, with weighted absolute error
-            below the threshold in both the model error and the naive-baseline error.
+    Returns
+    -------
+    float
+        The relative absolute error (RAE) score, with weighted absolute error below
+        the threshold in both the model error and the naive-baseline error.
 
     """
     mean_true = np.mean(y_true)
@@ -264,22 +294,29 @@ def rae_inverse_confidence_weighting(
     this metric to plain ``rae()`` exactly (the constant weight cancels out of both
     the numerator and denominator).
 
-    Args:
-        y_true (pd.Series | np.ndarray): True values.
-        y_pred (pd.Series | np.ndarray): Predicted values.
-        y_true_upper (pd.Series | np.ndarray | None): Optional upper bounds for true
-            values. Defaults to ``y_true`` if omitted.
-        y_true_lower (pd.Series | np.ndarray | None): Optional lower bounds for true
-            values. Defaults to ``y_true`` if omitted.
-        confidence_interval (float | pd.Series | np.ndarray | None): Optional
-            confidence interval (full width) for true values.
+    Parameters
+    ----------
+    y_true : pd.Series | np.ndarray
+        True values.
+    y_pred : pd.Series | np.ndarray
+        Predicted values.
+    y_true_upper : pd.Series | np.ndarray | None
+        Optional upper bounds for true values. Defaults to ``y_true`` if omitted.
+    y_true_lower : pd.Series | np.ndarray | None
+        Optional lower bounds for true values. Defaults to ``y_true`` if omitted.
+    confidence_interval : float | pd.Series | np.ndarray | None
+        Optional confidence interval (full width) for true values.
 
-    Returns:
-        float: The relative absolute error (RAE) score, with inverse confidence
-            weighting applied to both the model error and the naive-baseline error.
+    Returns
+    -------
+    float
+        The relative absolute error (RAE) score, with inverse confidence weighting
+        applied to both the model error and the naive-baseline error.
 
-    Raises:
-        ValueError: If both explicit bounds and a confidence interval are provided.
+    Raises
+    ------
+    ValueError
+        If both explicit bounds and a confidence interval are provided.
 
     """
     y_true_lower, y_true_upper = _resolve_bounds(

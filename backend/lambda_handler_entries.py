@@ -15,8 +15,10 @@ from .aws_manifest import create_all_entries_list, save_all_entries_list
 def handler(event, context):
     """Generate and save the full cross-track entries list.
 
-    Returns:
-        dict: Status message with row count.
+    Returns
+    -------
+    dict
+        Status message with row count.
 
     """
     os.environ["HOME"] = "/tmp"

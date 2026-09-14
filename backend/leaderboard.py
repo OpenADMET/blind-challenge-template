@@ -56,10 +56,14 @@ def generate_dynamic_alphabet(size_needed: int) -> list[str]:
 class EntryMetric:
     """A single metric to be displayed in the leaderboard.
 
-    Attributes:
-        name (str): The name of the metric (e.g., "accuracy", "F1 score").
-        mean (float): The mean value of the metric.
-        std (float): The standard deviation of the metric.
+    Attributes
+    ----------
+    name : str
+        The name of the metric (e.g., "accuracy", "F1 score").
+    mean : float
+        The mean value of the metric.
+    std : float
+        The standard deviation of the metric.
 
     """
 
@@ -72,21 +76,30 @@ class EntryMetric:
 class LeaderboardEntry:
     """A single submission entry in the leaderboard.
 
-    Attributes:
-        username (str): Hugging Face username for the submission owner.
-        anonymous (bool): Whether the user requested anonymous display.
-        user_alias (str): Alias to display when anonymous is True.
-        submitted_at (pd.Timestamp): Timestamp of when the submission was made.
-        model_report_link (str): Optional URL to a model report.
-        used_proprietary_data (bool): Whether proprietary data was used.
-        averaged_results (pd.DataFrame): One-row DataFrame containing metric summary columns
-            in ``<metric>_mean`` and ``<metric>_std`` format.
-        bootstrap_data (pd.DataFrame | None): Optional bootstrap-level results for statistical
-            comparison. Required only when pairwise comparisons are enabled.
-        open_source_code (bool): Whether the participant's code is open-source and
-            publicly available.
-        metrics (list[EntryMetric]): Parsed metric summaries derived from
-            ``averaged_results``.
+    Attributes
+    ----------
+    username : str
+        Hugging Face username for the submission owner.
+    anonymous : bool
+        Whether the user requested anonymous display.
+    user_alias : str
+        Alias to display when anonymous is True.
+    submitted_at : pd.Timestamp
+        Timestamp of when the submission was made.
+    model_report_link : str
+        Optional URL to a model report.
+    used_proprietary_data : bool
+        Whether proprietary data was used.
+    averaged_results : pd.DataFrame
+        One-row DataFrame containing metric summary columns in ``<metric>_mean`` and
+        ``<metric>_std`` format.
+    bootstrap_data : pd.DataFrame | None
+        Optional bootstrap-level results for statistical comparison. Required only
+        when pairwise comparisons are enabled.
+    open_source_code : bool
+        Whether the participant's code is open-source and publicly available.
+    metrics : list[EntryMetric]
+        Parsed metric summaries derived from ``averaged_results``.
 
     """
 
@@ -123,23 +136,28 @@ class LeaderboardEntry:
 class EntryComparison:
     """Pairwise statistical comparison between two leaderboard entries.
 
-    Attributes:
-        entry_a (LeaderboardEntry): First leaderboard entry in the comparison.
-        entry_b (LeaderboardEntry): Second leaderboard entry in the comparison.
-        primary_metric (str): Metric used for significance testing/ranking.
-        abs_mean_diff (float): Absolute difference in primary-metric means between
-            entries.
-        paired_bootstrap_data (pd.DataFrame): Bootstrap-aligned paired deltas for the
-            primary metric.
-        p_value (float): Two-sided sign-test style p-value estimated from bootstrap
-            deltas.
-        alpha_threshold (float): Family-wise alpha level before multiple-testing
-            adjustment.
-        adjusted_threshold (float | None): Multiple-testing-adjusted significance
-            threshold for this comparison (per ``determine_adjusted_threshold``'s
-            ``method``, Benjamini-Hochberg by default).
-        significant_difference (bool | None): Whether the pair is significantly
-            different after adjustment.
+    Attributes
+    ----------
+    entry_a : LeaderboardEntry
+        First leaderboard entry in the comparison.
+    entry_b : LeaderboardEntry
+        Second leaderboard entry in the comparison.
+    primary_metric : str
+        Metric used for significance testing/ranking.
+    abs_mean_diff : float
+        Absolute difference in primary-metric means between entries.
+    paired_bootstrap_data : pd.DataFrame
+        Bootstrap-aligned paired deltas for the primary metric.
+    p_value : float
+        Two-sided sign-test style p-value estimated from bootstrap deltas.
+    alpha_threshold : float
+        Family-wise alpha level before multiple-testing adjustment.
+    adjusted_threshold : float | None
+        Multiple-testing-adjusted significance threshold for this comparison (per
+        ``determine_adjusted_threshold``'s ``method``, Benjamini-Hochberg by
+        default).
+    significant_difference : bool | None
+        Whether the pair is significantly different after adjustment.
 
     """
 
@@ -226,15 +244,20 @@ class EntryComparison:
         - Benjamini-Hochberg: alpha * i / m
         Where 'm' is total comparisons and 'i' is the 1-based rank.
 
-        Args:
-            total_comparisons (int): Total number of hypothesis tests (m) in the family.
-            p_rank (int): 1-based rank (i) of the p-value when sorted from smallest to largest.
-            method (Literal["bonferroni", "holm-bonferroni", "benjamini-hochberg"] | None):
-                The multiple testing correction method to apply. Defaults to
-                "benjamini-hochberg".
+        Parameters
+        ----------
+        total_comparisons : int
+            Total number of hypothesis tests (m) in the family.
+        p_rank : int
+            1-based rank (i) of the p-value when sorted from smallest to largest.
+        method : Literal["bonferroni", "holm-bonferroni", "benjamini-hochberg"] | None
+            The multiple testing correction method to apply. Defaults to
+            "benjamini-hochberg".
 
-        Raises:
-            ValueError: If an unrecognized method string is provided.
+        Raises
+        ------
+        ValueError
+            If an unrecognized method string is provided.
 
         """
         self.adjustment_rank = p_rank
@@ -256,11 +279,15 @@ class EntryComparison:
     def determine_significance(self) -> bool:
         """Determine if the comparison is significant after threshold correction.
 
-        Returns:
-            bool: True if the p-value is below the adjusted threshold.
+        Returns
+        -------
+        bool
+            True if the p-value is below the adjusted threshold.
 
-        Raises:
-            ValueError: If the adjusted threshold has not been computed.
+        Raises
+        ------
+        ValueError
+            If the adjusted threshold has not been computed.
 
         """
         if self.adjusted_threshold is not None:
@@ -276,20 +303,25 @@ class EntryComparison:
 class FinalLeaderboard:
     """Final leaderboard object with entries, pairwise tests, and output table.
 
-    Attributes:
-        entries (list[LeaderboardEntry]): All submissions included in the leaderboard.
-        primary_metric (str): Metric used for ranking and statistical comparisons.
-
-        metric_sort_ascending (bool): Whether higher or lower values of the primary
-            metric are better.
-        significant_method (Literal["CLD", "tiers"] | None): Method for labeling
-            significance groups. Defaults to "tiers"; None skips significance testing.
-        additional_columns (list[str]): Optional extra columns copied from each entry's
-            ``averaged_results`` into the leaderboard rows.
-        comparisons (dict[frozenset[str], EntryComparison]): Pairwise comparison objects
-            keyed by entry identifier pair.
-        leaderboard_df (pd.DataFrame | None): Final rendered leaderboard DataFrame after
-            generation, or ``None`` before generation.
+    Attributes
+    ----------
+    entries : list[LeaderboardEntry]
+        All submissions included in the leaderboard.
+    primary_metric : str
+        Metric used for ranking and statistical comparisons.
+    metric_sort_ascending : bool
+        Whether higher or lower values of the primary metric are better.
+    significant_method : Literal["CLD", "tiers"] | None
+        Method for labeling significance groups. Defaults to "tiers"; None skips
+        significance testing.
+    additional_columns : list[str]
+        Optional extra columns copied from each entry's ``averaged_results`` into
+        the leaderboard rows.
+    comparisons : dict[frozenset[str], EntryComparison]
+        Pairwise comparison objects keyed by entry identifier pair.
+    leaderboard_df : pd.DataFrame | None
+        Final rendered leaderboard DataFrame after generation, or ``None`` before
+        generation.
 
     """
 
@@ -394,10 +426,10 @@ class FinalLeaderboard:
           order; once a test fails, it and every higher-p-value test are
           non-significant.
 
-        Args:
-            method (Literal["bonferroni", "holm-bonferroni", "benjamini-hochberg"] | None):
-                Multiple-testing correction to apply. Defaults to
-                "benjamini-hochberg".
+        Parameters
+        ----------
+        method : Literal["bonferroni", "holm-bonferroni", "benjamini-hochberg"] | None
+            Multiple-testing correction to apply. Defaults to "benjamini-hochberg".
 
         """
         self.comparisons = {}
@@ -487,15 +519,20 @@ class FinalLeaderboard:
 
         This module assumes input data has already been validated upstream.
 
-        Args:
-            max_users (int): Maximum number of users to generate CLD for. Defaults to
-                100.
+        Parameters
+        ----------
+        max_users : int
+            Maximum number of users to generate CLD for. Defaults to 100.
 
-        Returns:
-            list[str]: CLD strings aligned with leaderboard row order.
+        Returns
+        -------
+        list[str]
+            CLD strings aligned with leaderboard row order.
 
-        Raises:
-            ValueError: If the leaderboard has not been generated.
+        Raises
+        ------
+        ValueError
+            If the leaderboard has not been generated.
 
         """
         if self.leaderboard_df is None:
@@ -593,9 +630,11 @@ class FinalLeaderboard:
         baseline. When this occurs, a new tier starts, and that failing entry becomes
         the new baseline for all subsequent comparisons.
 
-        Returns:
-            list[str]: Tier labels ('Tier 1', 'Tier 2', etc.) aligned perfectly
-                       with the row order of the leaderboard_df.
+        Returns
+        -------
+        list[str]
+            Tier labels ('Tier 1', 'Tier 2', etc.) aligned perfectly with the row
+            order of the leaderboard_df.
 
         """
         if self.leaderboard_df is None or self.leaderboard_df.empty:
@@ -637,9 +676,11 @@ class FinalLeaderboard:
     def comparison_df(self) -> pd.DataFrame | None:
         """Return a DataFrame of pairwise comparison details.
 
-        Returns:
-            pd.DataFrame | None: A DataFrame containing pairwise comparison details,
-                or ``None`` if no comparisons have been performed.
+        Returns
+        -------
+        pd.DataFrame | None
+            A DataFrame containing pairwise comparison details, or ``None`` if no
+            comparisons have been performed.
 
         """
         if not self.comparisons:

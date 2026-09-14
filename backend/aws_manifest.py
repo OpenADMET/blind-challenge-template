@@ -93,10 +93,11 @@ def create_all_entries_list() -> pd.DataFrame:
     entrant/publication tracking rather than ranking. Reuses ``create_manifest`` with
     ``only_latest=False`` and no ``date_cutoff``.
 
-    Returns:
-        pd.DataFrame: Concatenated manifest rows for every track, with a "track"
-            column added if not already present. Empty if no track has any valid,
-            scored submissions.
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated manifest rows for every track, with a "track" column added if
+        not already present. Empty if no track has any valid, scored submissions.
 
     """
     entries_by_track = []
@@ -129,12 +130,15 @@ def save_all_entries_list(entries_df: pd.DataFrame) -> str:
     Mirrors ``aws_leaderboards.save_leaderboard``'s dual-write pattern: a dated
     snapshot for audit trail, plus an overwritten "latest" file for easy access.
 
-    Args:
-        entries_df (pd.DataFrame): The entries list to save, as returned by
-            ``create_all_entries_list``.
+    Parameters
+    ----------
+    entries_df : pd.DataFrame
+        The entries list to save, as returned by ``create_all_entries_list``.
 
-    Returns:
-        str: The S3 path of the saved "latest" file.
+    Returns
+    -------
+    str
+        The S3 path of the saved "latest" file.
 
     """
     # ``all_entries`` is the same for every track — this list spans both tracks, so
@@ -160,15 +164,20 @@ def create_manifest(
 ) -> pd.DataFrame:
     """Create a leaderboard manifest from validated submission metadata.
 
-    Args:
-        track (str): Track name — "regression", "classification", or "structure".
-        only_latest (bool): If True, keep only each user's latest submission.
-        date_cutoff (str | None): Optional ISO format date string to filter
-            submissions. This should be a string in UTC timezone, e.g.
-            "2024-12-31T23:59:59Z".
+    Parameters
+    ----------
+    track : str
+        Track name — "regression", "classification", or "structure".
+    only_latest : bool
+        If True, keep only each user's latest submission.
+    date_cutoff : str | None
+        Optional ISO format date string to filter submissions. This should be a
+        string in UTC timezone, e.g. "2024-12-31T23:59:59Z".
 
-    Returns:
-        pd.DataFrame: Manifest rows with metadata and score URIs.
+    Returns
+    -------
+    pd.DataFrame
+        Manifest rows with metadata and score URIs.
 
     """
     paths = _TRACK_PATHS[track]

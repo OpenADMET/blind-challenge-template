@@ -54,15 +54,21 @@ S3_CLIENT = boto3.client("s3")
 def fetch_submission_metadata(sk: SubmissionKey) -> dict:
     """Fetch the submission metadata for a given user and submission UUID.
 
-    Args:
-        sk (SubmissionKey): The S3 key components for the submission to fetch,
-            including the track, user ID, submission ID, and filename.
+    Parameters
+    ----------
+    sk : SubmissionKey
+        The S3 key components for the submission to fetch, including the track,
+        user ID, submission ID, and filename.
 
-    Returns:
-        dict: The metadata dictionary for the specified submission.
+    Returns
+    -------
+    dict
+        The metadata dictionary for the specified submission.
 
-    Raises:
-        Exception: If there is an error fetching the submission metadata from S3.
+    Raises
+    ------
+    Exception
+        If there is an error fetching the submission metadata from S3.
 
     """
     try:
@@ -90,16 +96,20 @@ def save_validated_submission_metadata(
     to allow for easy querying of the latest submission from each user when creating
     the leaderboards.
 
-    Args:
-        sk (SubmissionKey): The S3 key components for the submission to fetch,
-            including the track, user ID, submission ID, and filename.
-        metadata (pd.DataFrame): The metadata to save for the validated submission.
-        track_paths (TrackPaths): Which track's manifest to write to — e.g.
-            ``REGRESSION_PATHS``/``CLASSIFICATION_PATHS`` for an activity submission
-            (one submission writes a manifest row per track), or ``STRUCTURE_PATHS``.
-            Not necessarily the same track as ``sk.track``: an activity submission's
-            ``sk.track`` is always "activity" (the single upload prefix), but its
-            scores/manifest rows are written per scoring track.
+    Parameters
+    ----------
+    sk : SubmissionKey
+        The S3 key components for the submission to fetch, including the track,
+        user ID, submission ID, and filename.
+    metadata : pd.DataFrame
+        The metadata to save for the validated submission.
+    track_paths : TrackPaths
+        Which track's manifest to write to — e.g.
+        ``REGRESSION_PATHS``/``CLASSIFICATION_PATHS`` for an activity submission
+        (one submission writes a manifest row per track), or ``STRUCTURE_PATHS``.
+        Not necessarily the same track as ``sk.track``: an activity submission's
+        ``sk.track`` is always "activity" (the single upload prefix), but its
+        scores/manifest rows are written per scoring track.
 
     """
     s3_metadata_path = (
@@ -122,16 +132,23 @@ def create_validation_metadata(
 ) -> pd.DataFrame:
     """Create a metadata DataFrame for a validated submission (either track).
 
-    Args:
-        valid_submission (bool): Whether the submission passed validation.
-        submission_metadata (dict): Original metadata from the user's submission.
-        sk (SubmissionKey): Parsed S3 key for the submission — used to build
-            ``original_data_uri`` and the score URIs.
-        track_paths (TrackPaths): Which track this manifest row is for — see
-            ``save_validated_submission_metadata``.
+    Parameters
+    ----------
+    valid_submission : bool
+        Whether the submission passed validation.
+    submission_metadata : dict
+        Original metadata from the user's submission.
+    sk : SubmissionKey
+        Parsed S3 key for the submission — used to build ``original_data_uri`` and
+        the score URIs.
+    track_paths : TrackPaths
+        Which track this manifest row is for — see
+        ``save_validated_submission_metadata``.
 
-    Returns:
-        pd.DataFrame: Single-row DataFrame with validation outcome and score URIs.
+    Returns
+    -------
+    pd.DataFrame
+        Single-row DataFrame with validation outcome and score URIs.
 
     """
     scores_all_base = (
@@ -160,16 +177,22 @@ def create_validation_metadata(
 def load_track_identifiers(paths: TrackPaths) -> pd.DataFrame:
     """Load a track's identifiers parquet from S3.
 
-    Args:
-        paths (TrackPaths): Track path helper (``ACTIVITY_PATHS`` or
-            ``STRUCTURE_PATHS``) selecting where to load from.
+    Parameters
+    ----------
+    paths : TrackPaths
+        Track path helper (``ACTIVITY_PATHS`` or ``STRUCTURE_PATHS``) selecting
+        where to load from.
 
-    Returns:
-        pd.DataFrame: DataFrame with a ``Molecule_Name`` column and a ``phase``
-            column (1 = interim, 2 = final).
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with a ``Molecule_Name`` column and a ``phase`` column
+        (1 = interim, 2 = final).
 
-    Raises:
-        FileNotFoundError: If the identifiers file is not present in S3.
+    Raises
+    ------
+    FileNotFoundError
+        If the identifiers file is not present in S3.
 
     """
     path = f"s3://{S3_BUCKET}/{paths.ground_truth}/{paths.track}-identifiers.parquet"
@@ -187,17 +210,25 @@ def fetch_tabular_submission_data(sk: SubmissionKey) -> pd.DataFrame:
     Shared by the regression and classification tracks — both submit a single
     parquet/csv file, differing only in which columns it's expected to contain.
 
-    Args:
-        sk (SubmissionKey): The S3 key components for the submission to fetch,
-            including the track, user ID, submission ID, and filename.
+    Parameters
+    ----------
+    sk : SubmissionKey
+        The S3 key components for the submission to fetch, including the track,
+        user ID, submission ID, and filename.
 
-    Returns:
-        pd.DataFrame: The DataFrame containing the submission predictions.
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame containing the submission predictions.
 
-    Raises:
-        ValueError: If the submission file format is unsupported.
-        FileNotFoundError: If no valid submission file is found in S3.
-        Exception: If there is an error fetching the submission data from S3.
+    Raises
+    ------
+    ValueError
+        If the submission file format is unsupported.
+    FileNotFoundError
+        If no valid submission file is found in S3.
+    Exception
+        If there is an error fetching the submission data from S3.
 
     """
     try:
@@ -235,11 +266,15 @@ def load_activity_ground_truth() -> pd.DataFrame:
     this only needs to be fetched once per submission regardless of how many phases
     get scored.
 
-    Returns:
-        pd.DataFrame: The full activity ground truth dataset.
+    Returns
+    -------
+    pd.DataFrame
+        The full activity ground truth dataset.
 
-    Raises:
-        FileNotFoundError: If the ground truth file is not present in S3.
+    Raises
+    ------
+    FileNotFoundError
+        If the ground truth file is not present in S3.
 
     """
     path = f"s3://{S3_BUCKET}/{ACTIVITY_PATHS.ground_truth}/activity-dataset.parquet"
@@ -261,31 +296,38 @@ def _score_tabular_submission(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Shared scoring body for a single regression/classification submission.
 
-    Args:
-        submissions_df (pd.DataFrame): The DataFrame containing the submission
-            predictions.
-        phase (int): The phase number to determine which test data to use for
-            scoring. 0 = all compounds; 1 = interim subset only.
-        endpoints (list[str]): This track's endpoints — ``REGRESSION_ENDPOINTS`` or
-            ``CLASSIFICATION_ENDPOINTS``.
-        metrics (list): This track's metrics — ``ACTIVITY_METRICS`` or
-            ``CLASSIFICATION_METRICS``.
-        ground_truth (pd.DataFrame | None): The full activity ground truth. Required
-            — must be provided by the caller (see ``load_activity_ground_truth``).
-        test_identifiers (pd.DataFrame | None): Optional preloaded activity
-            identifiers (with "phase" and "Molecule_Name" columns), used to filter
-            ground truth down to the requested phase's compounds. Loaded from S3 if
-            not provided. Ignored when ``phase == 0``.
+    Parameters
+    ----------
+    submissions_df : pd.DataFrame
+        The DataFrame containing the submission predictions.
+    phase : int
+        The phase number to determine which test data to use for scoring.
+        0 = all compounds; 1 = interim subset only.
+    endpoints : list[str]
+        This track's endpoints — ``REGRESSION_ENDPOINTS`` or
+        ``CLASSIFICATION_ENDPOINTS``.
+    metrics : list
+        This track's metrics — ``ACTIVITY_METRICS`` or ``CLASSIFICATION_METRICS``.
+    ground_truth : pd.DataFrame | None
+        The full activity ground truth. Required — must be provided by the caller
+        (see ``load_activity_ground_truth``).
+    test_identifiers : pd.DataFrame | None
+        Optional preloaded activity identifiers (with "phase" and "Molecule_Name"
+        columns), used to filter ground truth down to the requested phase's
+        compounds. Loaded from S3 if not provided. Ignored when ``phase == 0``.
 
-    Returns:
-        tuple[pd.DataFrame, pd.DataFrame]: This track's scored bootstrap results (one
-            row per bootstrap sample per endpoint, including its own macro
-            pseudo-endpoint) and its wide, single-row averaged results (one column
-            per endpoint/metric/statistic) — see
-            ``evaluate_predictions.add_macro_endpoint``.
+    Returns
+    -------
+    tuple[pd.DataFrame, pd.DataFrame]
+        This track's scored bootstrap results (one row per bootstrap sample per
+        endpoint, including its own macro pseudo-endpoint) and its wide,
+        single-row averaged results (one column per endpoint/metric/statistic) —
+        see ``evaluate_predictions.add_macro_endpoint``.
 
-    Raises:
-        ValueError: If ``ground_truth`` is not provided.
+    Raises
+    ------
+    ValueError
+        If ``ground_truth`` is not provided.
 
     """
     if ground_truth is None:
@@ -356,15 +398,20 @@ def _process_new_tabular_submission(
 ) -> None:
     """Shared pipeline body for a single regression/classification submission.
 
-    Args:
-        sk (SubmissionKey): The S3 key components for the submission to fetch,
-            including the track, user ID, submission ID, and filename.
-        track_paths (TrackPaths): This track's ``TrackPaths`` (``REGRESSION_PATHS``
-            or ``CLASSIFICATION_PATHS``) — selects where scores/manifest are written.
-        validate: This track's validator (``validate_regression_submission`` or
-            ``validate_classification_submission``).
-        score: This track's scorer (``score_regression_submission`` or
-            ``score_classification_submission``).
+    Parameters
+    ----------
+    sk : SubmissionKey
+        The S3 key components for the submission to fetch, including the track,
+        user ID, submission ID, and filename.
+    track_paths : TrackPaths
+        This track's ``TrackPaths`` (``REGRESSION_PATHS`` or
+        ``CLASSIFICATION_PATHS``) — selects where scores/manifest are written.
+    validate
+        This track's validator (``validate_regression_submission`` or
+        ``validate_classification_submission``).
+    score
+        This track's scorer (``score_regression_submission`` or
+        ``score_classification_submission``).
 
     """
     logger.info(
@@ -453,9 +500,11 @@ def _process_new_tabular_submission(
 def process_new_regression_submission(sk: SubmissionKey) -> None:
     """Validate, score, and persist a new regression submission from S3.
 
-    Args:
-        sk (SubmissionKey): The S3 key components for the submission to fetch,
-            including the track, user ID, submission ID, and filename.
+    Parameters
+    ----------
+    sk : SubmissionKey
+        The S3 key components for the submission to fetch, including the track,
+        user ID, submission ID, and filename.
 
     """
     _process_new_tabular_submission(
@@ -471,9 +520,11 @@ def process_new_regression_submission(sk: SubmissionKey) -> None:
 def process_new_classification_submission(sk: SubmissionKey) -> None:
     """Validate, score, and persist a new classification submission from S3.
 
-    Args:
-        sk (SubmissionKey): The S3 key components for the submission to fetch,
-            including the track, user ID, submission ID, and filename.
+    Parameters
+    ----------
+    sk : SubmissionKey
+        The S3 key components for the submission to fetch, including the track,
+        user ID, submission ID, and filename.
 
     """
     _process_new_tabular_submission(
@@ -492,12 +543,17 @@ def process_new_classification_submission(sk: SubmissionKey) -> None:
 def _extract_pdb_files(zip_path: Path, extract_dir: Path) -> dict[str, str]:
     """Extract PDB files from a zip and return a mol_id → path mapping.
 
-    Args:
-        zip_path (Path): Path to the zip file.
-        extract_dir (Path): Directory to extract into.
+    Parameters
+    ----------
+    zip_path : Path
+        Path to the zip file.
+    extract_dir : Path
+        Directory to extract into.
 
-    Returns:
-        dict[str, str]: Mapping from molecule ID (PDB stem) to extracted path.
+    Returns
+    -------
+    dict[str, str]
+        Mapping from molecule ID (PDB stem) to extracted path.
 
     """
     extract_dir = extract_dir.resolve()
@@ -521,19 +577,27 @@ def _download_and_extract_structure_zip(
 ) -> tuple[Path, dict[str, str]]:
     """Download a structure zip from S3 to a fresh /tmp dir and extract its PDB files.
 
-    Args:
-        key (str): S3 object key of the zip file (no bucket).
-        tmp_prefix (str): Prefix for the ``tempfile.mkdtemp`` directory.
-        zip_filename (str): Filename to give the downloaded zip on disk.
-        missing_message (str): Error message to raise if the key does not exist.
+    Parameters
+    ----------
+    key : str
+        S3 object key of the zip file (no bucket).
+    tmp_prefix : str
+        Prefix for the ``tempfile.mkdtemp`` directory.
+    zip_filename : str
+        Filename to give the downloaded zip on disk.
+    missing_message : str
+        Error message to raise if the key does not exist.
 
-    Returns:
-        tuple[Path, dict[str, str]]: The temporary directory (caller is responsible
-            for cleaning it up) and a mapping from molecule ID (PDB stem) to
-            extracted filesystem path.
+    Returns
+    -------
+    tuple[Path, dict[str, str]]
+        The temporary directory (caller is responsible for cleaning it up) and a
+        mapping from molecule ID (PDB stem) to extracted filesystem path.
 
-    Raises:
-        FileNotFoundError: If the zip object does not exist in S3.
+    Raises
+    ------
+    FileNotFoundError
+        If the zip object does not exist in S3.
 
     """
     tmp_dir = Path(tempfile.mkdtemp(prefix=tmp_prefix))
@@ -561,16 +625,22 @@ def fetch_structure_submission_data(
 ) -> tuple[Path, Path, dict[str, str]]:
     """Download a structure submission zip from S3 and extract PDB files to /tmp.
 
-    Args:
-        sk (SubmissionKey): Parsed S3 key for the submission.
+    Parameters
+    ----------
+    sk : SubmissionKey
+        Parsed S3 key for the submission.
 
-    Returns:
-        tuple[Path, Path, dict[str, str]]: The temporary submission directory, the
-            downloaded zip path, and a mapping from molecule ID (stem of each PDB
-            filename) to its extracted filesystem path.
+    Returns
+    -------
+    tuple[Path, Path, dict[str, str]]
+        The temporary submission directory, the downloaded zip path, and a
+        mapping from molecule ID (stem of each PDB filename) to its extracted
+        filesystem path.
 
-    Raises:
-        FileNotFoundError: If the zip object does not exist in S3.
+    Raises
+    ------
+    FileNotFoundError
+        If the zip object does not exist in S3.
 
     """
     s3_url = f"s3://{S3_BUCKET}/{sk.key}"
@@ -589,12 +659,16 @@ def fetch_structure_submission_data(
 def load_structure_ground_truth() -> tuple[Path, dict[str, str]]:
     """Download and extract the structure ground truth zip from S3 to /tmp.
 
-    Returns:
-        tuple[Path, dict[str, str]]: Temporary extraction directory and mapping from
-            molecule ID (PDB stem) to extracted filesystem path.
+    Returns
+    -------
+    tuple[Path, dict[str, str]]
+        Temporary extraction directory and mapping from molecule ID (PDB stem) to
+        extracted filesystem path.
 
-    Raises:
-        FileNotFoundError: If the ground truth zip is not present in S3.
+    Raises
+    ------
+    FileNotFoundError
+        If the ground truth zip is not present in S3.
 
     """
     key = f"{STRUCTURE_PATHS.ground_truth}/structure-dataset.zip"
@@ -617,23 +691,29 @@ def score_structure_submission(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, list[str]]]:
     """Score a structure submission against the ground truth.
 
-    Args:
-        predicted (dict[str, str]): Mapping from molecule ID to predicted PDB path,
-            as returned by ``fetch_structure_submission_data``.
-        phase (int): 0 = all compounds; 1 = interim subset only (filtered via
-            ``structure-identifiers.parquet``).
-        ground_truth (dict[str, str] | None): Optional preloaded ground-truth mapping
-            to avoid repeated downloads/extraction.
-        identifiers (pd.DataFrame | None): Optional preloaded structure identifiers.
+    Parameters
+    ----------
+    predicted : dict[str, str]
+        Mapping from molecule ID to predicted PDB path, as returned by
+        ``fetch_structure_submission_data``.
+    phase : int
+        0 = all compounds; 1 = interim subset only (filtered via
+        ``structure-identifiers.parquet``).
+    ground_truth : dict[str, str] | None
+        Optional preloaded ground-truth mapping to avoid repeated
+        downloads/extraction.
+    identifiers : pd.DataFrame | None
+        Optional preloaded structure identifiers.
 
-    Returns:
-        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, list[str]]]:
-            A tuple of (per_compound_df, bootstrap_df, averaged_df, pb_failures)
-            where per_compound_df contains per-compound raw scores, bootstrap_df the
-            full bootstrap results, averaged_df the single-row, endpoint-prefixed
-            mean/std per metric (see ``evaluate_predictions.pivot_endpoint_results_wide``),
-            and pb_failures maps molecule ID to the PoseBusters check names that caused
-            its scores to be zeroed (only compounds exceeding the failure threshold appear).
+    Returns
+    -------
+    tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, list[str]]]
+        A tuple of (per_compound_df, bootstrap_df, averaged_df, pb_failures)
+        where per_compound_df contains per-compound raw scores, bootstrap_df the
+        full bootstrap results, averaged_df the single-row, endpoint-prefixed
+        mean/std per metric (see ``evaluate_predictions.pivot_endpoint_results_wide``),
+        and pb_failures maps molecule ID to the PoseBusters check names that caused
+        its scores to be zeroed (only compounds exceeding the failure threshold appear).
 
     """
     if ground_truth is None:
@@ -667,8 +747,10 @@ def score_structure_submission(
 def process_new_structure_submission(sk: SubmissionKey) -> None:
     """Validate, score, and persist a new structure submission from S3.
 
-    Args:
-        sk (SubmissionKey): Parsed S3 key for the submission file.
+    Parameters
+    ----------
+    sk : SubmissionKey
+        Parsed S3 key for the submission file.
 
     """
     logger.info(
