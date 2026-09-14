@@ -22,3 +22,11 @@ updates:
     groups:
       hf-space:
         patterns: ["*"]
+    ignore:
+      # gradio-leaderboard==0.0.14 (used in hf_space/leaderboards.py) is pinned to
+      # gradio<6.0 on PyPI with no 6.x-compatible release yet, and gradio 5.50.0
+      # itself caps pandas<3.0 and pydantic<=2.12.3 — so a gradio major bump makes
+      # the whole requirements.txt unresolvable. Remove this once gradio-leaderboard
+      # supports gradio 6.
+      - dependency-name: "gradio"
+        update-types: ["version-update:semver-major"]
