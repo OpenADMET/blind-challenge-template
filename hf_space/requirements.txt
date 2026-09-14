@@ -1,9 +1,9 @@
 gradio==5.50.0
 gradio-leaderboard==0.0.14
 loguru==0.7.3
-boto3==1.43.83
-pandas==2.3.3
+boto3==1.43.92
+pandas==3.0.5
 pyarrow==25.0.1
-numpy==2.5.2
-pydantic==2.12.3
+numpy==2.5.3
+pydantic==2.13.5
 requests==2.34.2
