@@ -16,6 +16,7 @@ from .config import (
     S3_BUCKET,
     STRUCTURE_PATHS,
 )
+from .utils import _safeify_username
 
 _TRACK_PATHS = {
     "regression": REGRESSION_PATHS,
@@ -233,12 +234,13 @@ def create_manifest(
         manifest["submitted_at"] = pd.to_datetime(manifest["submitted_at"], utc=True)
 
         if parsed_cutoff_utc is not None:
-            manifest = manifest[manifest["submitted_at"] <= parsed_cutoff_utc]
+            manifest = manifest[manifest["submitted_at"] <= parsed_cutoff_utc].copy()
 
         if only_latest:
+            manifest["safe_username"] = manifest["username"].apply(_safeify_username)
             manifest = (
                 manifest.sort_values("submitted_at", ascending=False)
-                .drop_duplicates(subset=["username"], keep="first")
+                .drop_duplicates(subset=["safe_username"], keep="first")
                 .reset_index(drop=True)
             )
 

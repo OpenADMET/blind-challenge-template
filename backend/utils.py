@@ -249,3 +249,15 @@ def validate_model_details(tag: str) -> str:
         return "Invalid link"
     else:
         return safe_tag
+
+
+def _safeify_username(username: str) -> str:
+    """Sanitise a HuggingFace username for use in S3 keys and file paths.
+
+    HF usernames for organisations use the format ``org/user``, which would create
+    unintended S3 path nesting. Spaces are also replaced for safety. Lowercased so
+    that HF-username casing variants (which all resolve to the same account) map to
+    the same S3 prefix — otherwise the per-user submission cooldown
+    (``_fetch_last_submission_date``) could be bypassed by alternating case.
+    """
+    return str(username.strip()).lower().replace("/", "_").replace(" ", "_")
