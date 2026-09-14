@@ -2,6 +2,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Backend Tests](https://github.com/OpenADMET/blind-challenge-template/actions/workflows/backend-tests.yml/badge.svg)](https://github.com/OpenADMET/blind-challenge-template/actions/workflows/backend-tests.yml)
+[![HF Space Code Quality](https://github.com/OpenADMET/blind-challenge-template/actions/workflows/hf-space-checks.yml/badge.svg)](https://github.com/OpenADMET/blind-challenge-template/actions/workflows/hf-space-checks.yml)
 
 Template backend and infrastructure for a **blind challenge** — copy this repo to stand up a new ML competition in minutes. Supports three independent submission tracks out of the box: regression, classification, and structure (protein–ligand pose) prediction, each scored and leaderboarded separately. Built and used by [OpenADMET](https://openadmet.org), open-sourced for anyone to reuse.
 
@@ -34,7 +35,7 @@ The quickest way to see every fill-in point at once is the [**Todo Tree**](https
 | [`opentofu/`](opentofu/README.md) | OpenTofu config provisioning all AWS resources (S3, Lambda, EventBridge, IAM, ECR, Secrets Manager) |
 | [`docs/`](docs/scoring-and-leaderboards.md) | Design docs — scoring/leaderboard pipeline diagrams, phase/stage disambiguation, etc. |
 | `tests/backend/` | Backend unit tests (pytest) |
-| `.github/workflows/` | CI: `backend-tests.yml` runs here; the deploy-on-push workflows for the backend/infra and the HF Space live in `.github/workflows.disabled/` until you stand up a challenge |
+| `.github/workflows/` | CI: `backend-tests.yml` (lint/type-check/docstring-check/pytest for `backend/`) and `hf-space-checks.yml` (the same checks for `hf_space/`) run here; the deploy-on-push workflows for the backend/infra and the HF Space live in `.github/workflows.disabled/` until you stand up a challenge |
 
 ---
 
@@ -94,7 +95,7 @@ Push to hf_testing
      repo variable  [uses HF_TOKEN; job skipped if the variable is unset]
 ```
 
-Backend unit tests (`.github/workflows/backend-tests.yml`) run on every push and PR to `main` (and `hf_testing`) that touches `backend/`, `tests/`, `environment.yml`, or `pytest.ini`, plus on manual dispatch. This one is active in the template itself.
+Two workflows are active in the template itself, both on every push and PR to `main` (and `hf_testing`), plus manual dispatch: `.github/workflows/backend-tests.yml` (ruff/mypy/pydoclint, then pytest) on changes to `backend/`, `tests/`, `environment.yml`, `pytest.ini`, or `pyproject.toml`; and `.github/workflows/hf-space-checks.yml` (the same ruff/mypy/pydoclint checks, no test suite) on changes to `hf_space/` or `pyproject.toml`.
 
 ### Required GitHub Actions Secrets (`.github/workflows/deploy.yml`, `deploy-hf-space.yml`)
 

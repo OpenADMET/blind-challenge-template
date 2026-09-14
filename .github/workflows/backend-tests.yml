@@ -1,9 +1,10 @@
 name: Backend Tests
 
-# Runs the backend unit suite (pytest tests/backend/) on this repo and on any
-# challenge repo forked from it. This is the one workflow active out of the box.
-# deploy.yml / deploy-hf-space.yml / naming-guardrail.yml ship under
-# .github/workflows.disabled/ and are enabled per docs/SETUP.md.
+# Lints, type-checks, and runs the backend unit suite (pytest tests/backend/) on
+# this repo and on any challenge repo forked from it. This and hf-space-checks.yml
+# are the two workflows active out of the box. deploy.yml / deploy-hf-space.yml /
+# naming-guardrail.yml ship under .github/workflows.disabled/ and are enabled per
+# docs/SETUP.md.
 #
 # Path-filtered so docs- or hf_space-only changes don't spin up the (heavy) conda
 # env. If you later make "Backend Tests" a *required* status check in branch

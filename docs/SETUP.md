@@ -73,7 +73,7 @@ The challenge repo stores all code and drives CI/CD. On pushes/merges to `main`,
 
 2. Remove the template's history: `rm -rf .git`
 
-3. Enable the deploy workflows. `.github/workflows/backend-tests.yml` already runs (on the template and on your copy). The three that actually deploy something ship under `.github/workflows.disabled/` so they don't fire against the template's placeholder infra; move them into place:
+3. Enable the deploy workflows. `.github/workflows/backend-tests.yml` and `.github/workflows/hf-space-checks.yml` already run (on the template and on your copy). The three that actually deploy something ship under `.github/workflows.disabled/` so they don't fire against the template's placeholder infra; move them into place:
 
    ```bash
    mv .github/workflows.disabled/*.yml .github/workflows/
