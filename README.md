@@ -3,6 +3,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Backend Tests](https://github.com/OpenADMET/blind-challenge-template/actions/workflows/backend-tests.yml/badge.svg)](https://github.com/OpenADMET/blind-challenge-template/actions/workflows/backend-tests.yml)
 [![HF Space Code Quality](https://github.com/OpenADMET/blind-challenge-template/actions/workflows/hf-space-checks.yml/badge.svg)](https://github.com/OpenADMET/blind-challenge-template/actions/workflows/hf-space-checks.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22780110.svg)](https://doi.org/10.5281/zenodo.22780110)
 
 Template backend and infrastructure for a **blind challenge** — copy this repo to stand up a new ML competition in minutes. Supports three independent submission tracks out of the box: regression, classification, and structure (protein–ligand pose) prediction, each scored and leaderboarded separately. Built and used by [OpenADMET](https://openadmet.org), open-sourced for anyone to reuse.
 

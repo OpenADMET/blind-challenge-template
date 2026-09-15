@@ -12,6 +12,7 @@ authors:
   - name: "Open Molecular Software Foundation"
 repository-code: "https://github.com/OpenADMET/blind-challenge-template"
 url: "https://github.com/OpenADMET/blind-challenge-template"
+doi: 10.5281/zenodo.22780110
 license: Apache-2.0
 keywords:
   - blind challenge
