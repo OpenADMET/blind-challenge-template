@@ -6,31 +6,15 @@ name: Backend Tests
 # naming-guardrail.yml ship under .github/workflows.disabled/ and are enabled per
 # docs/SETUP.md.
 #
-# Path-filtered so docs- or hf_space-only changes don't spin up the (heavy) conda
-# env. If you later make "Backend Tests" a *required* status check in branch
-# protection, either drop the `paths:` filters below or add a companion
-# always-passing job for skipped paths — a required check that never triggers
-# blocks the PR from merging.
+# Runs unconditionally on every push/PR to main/hf_testing (not path-filtered)
+# so it can be a required branch-protection status check without blocking
+# docs-only PRs that would otherwise never trigger a path-filtered run.
 
 on:
   push:
     branches: [main, hf_testing]
-    paths:
-      - 'backend/**'
-      - 'tests/**'
-      - 'environment.yml'
-      - 'pytest.ini'
-      - 'pyproject.toml'
-      - '.github/workflows/backend-tests.yml'
   pull_request:
     branches: [main, hf_testing]
-    paths:
-      - 'backend/**'
-      - 'tests/**'
-      - 'environment.yml'
-      - 'pytest.ini'
-      - 'pyproject.toml'
-      - '.github/workflows/backend-tests.yml'
   workflow_dispatch:
 
 permissions:

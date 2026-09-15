@@ -1,0 +1,26 @@
+{
+  "title": "blind-challenge-template: infrastructure for running a blind ML challenge",
+  "description": "A reusable template for standing up a blind machine-learning challenge: a bootstrapped scoring backend for regression, classification, and protein-ligand structure prediction, OpenTofu-managed AWS infrastructure, and a Hugging Face Spaces frontend for submissions and leaderboards.",
+  "upload_type": "software",
+  "creators": [
+    { "name": "OpenADMET" },
+    { "name": "Open Molecular Software Foundation" }
+  ],
+  "license": "Apache-2.0",
+  "access_right": "open",
+  "keywords": [
+    "blind challenge",
+    "benchmarking",
+    "machine learning",
+    "cheminformatics",
+    "ADMET",
+    "leaderboard"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/OpenADMET/blind-challenge-template",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}
