@@ -64,9 +64,19 @@ jobs:
         # that recurs in different files across releases (see rdkit/rdkit#8339,
         # #7554, #8673, #7378). openstructure's version is intentionally unpinned
         # above, so the exact rdkit version — and whether its stubs are currently
-        # broken — can vary between runs. Since rdkit is otherwise untyped for
-        # mypy (ignore_missing_imports), dropping the bundled stubs is safe.
-        run: python -c "import os, shutil, rdkit; sp = os.path.dirname(os.path.dirname(rdkit.__file__)); shutil.rmtree(os.path.join(sp, 'rdkit-stubs'), ignore_errors=True)"
+        # broken, or whether this build of openstructure even pulls in rdkit at
+        # all — can vary between runs. Every rdkit import in backend/ already
+        # carries a `# type: ignore[import]`, which mypy honors whether rdkit is
+        # merely untyped or entirely absent, so skip this step gracefully instead
+        # of failing when there's no rdkit-stubs (or no rdkit) to clean up.
+        run: |
+          python -c "
+          import importlib.util
+          if importlib.util.find_spec('rdkit') is not None:
+              import os, shutil, rdkit
+              sp = os.path.dirname(os.path.dirname(rdkit.__file__))
+              shutil.rmtree(os.path.join(sp, 'rdkit-stubs'), ignore_errors=True)
+          "
 
       - name: Lint (ruff)
         run: ruff check backend/
