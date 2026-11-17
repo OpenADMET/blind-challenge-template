@@ -1,6 +1,8 @@
 """Real OpenStructure scoring of synthetic complexes: one model ligand only.
 
-Skipped when OpenStructure or its compound library isn't installed.
+Skipped when OpenStructure, its compound library or PoseBusters isn't installed.
+The scoring Lambda image has all three; ``environment.yml`` (used by CI) doesn't
+include PoseBusters yet, and ``score_single_structure`` needs it after OST scoring.
 """
 
 import math
@@ -10,6 +12,7 @@ import pytest
 from backend.evaluate_predictions import score_single_structure
 from tests.backend.synthetic_complexes import OFFSET, SITE, SITE_2, benzene, complex_pdb
 
+pytest.importorskip("posebusters")
 ost_conop = pytest.importorskip("ost.conop")
 if ost_conop.GetDefaultLib() is None:
     pytest.skip("OpenStructure compound library not available", allow_module_level=True)
