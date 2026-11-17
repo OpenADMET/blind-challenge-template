@@ -151,22 +151,22 @@ def render_submission_tab(
     open_tracks = {track for track, v in visibility.items() if v.submissions_open}
     if phase == 0:
         gr.Markdown("""
-# Submission Portal (Coming Soon)
+## Submission Portal (Coming Soon)
 The submission portal will open when the challenge begins. Please check back once the challenge opens.
 """)
     elif phase in [3, 4]:
         gr.Markdown("""
-# Submission Portal (Closed)
+## Submission Portal (Closed)
 The submission portal is now closed. Thank you for your participation!
 
 If you were unable to get your submission in before the deadline, please contact us through Discord and we *may* be able to help.
 """)
     else:
-        gr.Markdown("""# Submit Your Predictions""")
+        gr.Markdown("""## Submit Your Predictions""")
         intro_markdown = f"""New to the challenge? See the [challenge tutorial]({TUTORIAL_LINK}) for a step-by-step walkthrough of data loading, model building, and preparing your submission. The tutorial repository also includes a validation script to check your files before uploading. Training and test sets are available on the [HuggingFace dataset page]({DATASET_DOWNLOAD_LINK})."""
 
         regression_markdown = f"""
-#### Regression Track
+### Regression Track
 Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} rows** and {len(REQUIRED_REGRESSION_COLUMNS)} columns — a numeric prediction for all {len(REGRESSION_SPEC.endpoints)} regression endpoints, for every compound, no `NaN` or `inf`:
 
 {SUBMISSION_SCHEMA_TABLE_REGRESSION_MD}
@@ -175,7 +175,7 @@ Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} ro
 {SUBMISSION_CSV_EXAMPLE_REGRESSION_MD}
 """
         classification_markdown = f"""
-#### Classification Track
+### Classification Track
 Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} rows** and {len(REQUIRED_CLASSIFICATION_COLUMNS)} columns — a boolean prediction for each of the {len(CLASSIFICATION_SPEC.endpoints)} classification endpoints, for every compound:
 
 {SUBMISSION_SCHEMA_TABLE_CLASSIFICATION_MD}
@@ -184,7 +184,7 @@ Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} ro
 {SUBMISSION_CSV_EXAMPLE_CLASSIFICATION_MD}
 """
         structure_markdown = f"""
-#### Structure Track
+### Structure Track
 Submit a **`.zip`** archive containing exactly **{STRUCTURE_DATASET_SIZE} `.pdb` files**, one per compound, named after the compound identifier (e.g. `x00011-1.pdb`). Each file must be a full protein–ligand complex containing **exactly one** predicted ligand pose, as a single residue named **`LIG`**. A submission where any file has no `LIG` residue, or more than one, is rejected as a whole, and the rejection still counts towards the submission cooldown, so please check your files with the validation code first.
 """
         submission_markdown = intro_markdown

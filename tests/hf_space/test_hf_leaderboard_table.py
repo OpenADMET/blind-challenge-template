@@ -239,3 +239,14 @@ def test_missing_values_are_none_not_nan():
     data = _table().to_dataframe_value(["MAE"])["data"]
     assert data[2] == [None]
     assert not any(isinstance(v, float) and math.isnan(v) for row in data for v in row)
+
+
+def test_table_rejects_mismatched_styling():
+    table = _table()
+    with pytest.raises(ValueError, match="styling"):
+        LeaderboardTable(
+            table.values,
+            table.display,
+            table.datatypes,
+            styling=table.display.drop(columns="MAE"),
+        )

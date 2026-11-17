@@ -1,0 +1,109 @@
+/* Styles for the Space, passed to launch(css_paths=...). Colours come from the
+   theme's CSS variables where possible, so they follow config.py's THEME_* settings
+   and dark mode. */
+
+/* --- Header --- */
+.challenge-header {
+    align-items: center;
+}
+
+.status-line {
+    margin: 4px 0 12px;
+    color: var(--body-text-color-subdued);
+    font-size: var(--text-md);
+}
+
+.status-line p {
+    margin: 0;
+}
+
+.link-buttons {
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+/* --- Banners --- */
+.banner {
+    margin: 0 0 16px;
+    padding: 14px 18px;
+    border-radius: var(--radius-lg);
+    border: 2px solid;
+    text-align: center;
+}
+
+.banner strong {
+    display: block;
+    font-size: var(--text-lg);
+    margin-bottom: 4px;
+}
+
+.banner p {
+    margin: 0;
+}
+
+.banner-warning {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #78350f;
+}
+
+.dark .banner-warning {
+    background: rgba(245, 158, 11, 0.14);
+    color: #fde68a;
+}
+
+/* --- Markdown tables (About tab) --- */
+#welcome-md table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+#welcome-md th,
+#welcome-md td {
+    padding: 10px;
+    border: 1px solid var(--border-color-primary);
+}
+
+#welcome-md thead th {
+    background: var(--background-fill-secondary);
+}
+
+/* --- Leaderboards --- */
+.leaderboard-note {
+    color: var(--body-text-color-subdued);
+    font-size: var(--text-sm);
+}
+
+.leaderboard-note p {
+    margin: 2px 0;
+}
+
+.leaderboard-toolbar {
+    align-items: flex-end;
+    gap: 12px;
+}
+
+/* The Download CSV button sits beside the endpoint picker, at the same height. */
+.track-controls {
+    align-items: stretch;
+}
+
+.track-controls .download-button {
+    height: auto !important;
+    min-height: 100%;
+    align-self: stretch;
+}
+
+/* No alternate-row striping: shading marks significance tiers or the top three. */
+.leaderboard-table .virtual-row {
+    background: var(--background-fill-primary) !important;
+}
+
+/* The theme's font with equal-width digits, so numbers line up. */
+.leaderboard-table [role="gridcell"],
+.leaderboard-table [role="columnheader"],
+.leaderboard-table .cell-wrap span {
+    font-family: var(--font);
+    font-variant-numeric: tabular-nums;
+}

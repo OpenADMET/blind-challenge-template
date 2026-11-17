@@ -19,7 +19,7 @@ from typing import Literal
 # 2: Phase 2 (live leaderboard + static interim leaderboard)
 # 3: Challenge closed, final leaderboard not yet released
 # 4: Challenge closed, final leaderboard released
-CURRENT_PHASE = 0
+CURRENT_PHASE = 4
 HOURS_BETWEEN_SUBMISSIONS = 12
 # Minimum standard deviation for regression predictions to be considered valid.
 # Constant columns (with or without slight noise added) can be used to game the
@@ -59,6 +59,32 @@ DATASET_DOWNLOAD_LINK = (
 )
 # TODO: link to this challenge's tutorial / baseline-notebook repository.
 TUTORIAL_LINK = "https://github.com/<ORG>/<Challenge-Tutorial>"
+# TODO: invite link to this challenge's Discord server, or "" for no Discord button.
+DISCORD_LINK = "https://discord.gg/<invite-code>"
+
+# TODO: this challenge's submission deadlines, as in backend/config.py (UTC, format
+# "%Y-%m-%dT%H:%M:%SZ"; the drift test checks they match). The Space uses them for
+# the status line under the header and the model report reminder.
+INTERIM_LEADERBOARD_DEADLINE = "2099-01-01T23:59:59Z"
+FINAL_LEADERBOARD_DEADLINE = "2099-12-31T23:59:59Z"
+# With REQUIRE_MODEL_REPORT, a banner reminds participants to add a model report link
+# this many days before FINAL_LEADERBOARD_DEADLINE.
+MODEL_REPORT_REMINDER_DAYS = 7
+
+# ---------------------------------- Appearance -----------------------------------------
+
+# TODO (optional): the Space's colours. Each is a Gradio colour name ("blue", "sky",
+# "emerald", "violet", "slate", "zinc", ...) or a hex colour such as "#1f6feb", from
+# which lighter and darker shades are made. Primary is buttons and highlights,
+# secondary is accents, neutral is backgrounds, borders and text.
+THEME_PRIMARY_COLOUR = "blue"
+THEME_SECONDARY_COLOUR = "sky"
+THEME_NEUTRAL_COLOUR = "slate"
+# TODO (optional): a Google Fonts family name, e.g. "Inter", or None for Gradio's.
+THEME_FONT: str | None = None
+# TODO: add the challenge logo here (not shipped in the template). The header shows it
+# when the file exists. Relative to hf_space/.
+LOGO_PATH = "_static/challenge_logo.png"
 
 # Activity bootstrap-results.parquet files hold one row per (Sample, Endpoint) pair,
 # including this synthetic pseudo-endpoint holding the multi-endpoint macro-averaged
@@ -218,6 +244,25 @@ METRIC_DISPLAY_NAMES: dict[str, str] = {
     "Kendall_Tau": "Kendall's τ",
     "F1": "F1 Score",
     "coverage": "Coverage",
+}
+# Whether a higher value of each metric (or extra column) is better, for the ↑/↓
+# in the leaderboard headers. A metric not listed gets no arrow; a track's primary
+# metric uses its TrackSpec.higher_is_better.
+METRIC_HIGHER_IS_BETTER: dict[str, bool] = {
+    "ST-RAE": False,
+    "MAE": False,
+    "R2": True,
+    "Spearman_R": True,
+    "Kendall_Tau": True,
+    "MCC": True,
+    "Accuracy": True,
+    "Precision": True,
+    "Recall": True,
+    "F1": True,
+    "LDDT-PLI": True,
+    "BiSyRMSD": False,
+    "LDDT-LP": True,
+    "coverage": True,
 }
 
 
@@ -392,7 +437,7 @@ SUBMISSION_CSV_EXAMPLE_CLASSIFICATION_MD = _csv_example_md(
 
 # Challenge page content
 #
-# The four markdown blocks below are all the challenge-specific prose on the
+# The markdown blocks below are all the challenge-specific prose on the
 # Space. They are placeholder skeletons — replace the <ANGLE_BRACKET> text and
 # work through every "TODO" comment. Where each block renders:
 #   PAGE_TITLE           -> browser tab / Gradio app title (app.py)
@@ -409,7 +454,7 @@ PAGE_TITLE = "Blind Challenge: <Challenge Title>"
 # TODO: fill in. Keep to a one-line title + 2-4 sentences on what participants
 # predict and why it matters, then the "go to Leaderboard / Submit" pointer, then
 # the timeline bullets. Rendered at the top of the landing / Leaderboard tab.
-HEADER_MARKDOWN = """## Blind Challenge: <Challenge Title> 🧬
+HEADER_MARKDOWN = """# Blind Challenge: <Challenge Title> 🧬
 <One or two sentences: what participants are predicting (the endpoint / property)
 and why accurate prediction matters for drug discovery.>
 
@@ -426,13 +471,13 @@ Go to the **Leaderboard** to see current standings. To participate, head to the 
 """
 
 # TODO: fill in. Rendered inside ABOUT_MD while CURRENT_PHASE is 1 or 2.
-HOW_TO_PARTICIPATE_MD = f"""## ✅ How to Participate
+HOW_TO_PARTICIPATE_MD = f"""### ✅ How to Participate
 
 1. **Register:** Create an account with Hugging Face.
 2. **Get the Data:** Download the training and test sets from the [challenge dataset page]({DATASET_DOWNLOAD_LINK}).
 3. **Walk through the Tutorial:** Check out the baseline notebooks and validation scripts in the [challenge tutorial repository]({TUTORIAL_LINK}).
 4. **Disclosures:** Indicate whether your submission contributes open-source code and disclose any use of **proprietary training data**.
-5. **Join the Community:** Get support, ask questions, and collaborate in the `#<your-challenge>` channel on our [Discord](<Discord invite URL>).
+5. **Join the Community:** Get support, ask questions, and collaborate in the `#<your-challenge>` channel on our [Discord]({DISCORD_LINK}).
 6. **Submit:** Upload your predictions via the **Submit** tab.
 
 ---"""
@@ -443,41 +488,41 @@ HOW_TO_PARTICIPATE_MD = f"""## ✅ How to Participate
 # The Challenge Tracks (one paragraph per track + its scoring) · Timeline ·
 # Acknowledgements. Rendered on the "About" tab.
 ABOUT_MD = f"""
-# <Challenge Title> Blind Challenge
+## About the Challenge
 
-## Background: Why This Matters
+### Background: Why This Matters
 
 <Why does predicting this endpoint / property matter for drug discovery? What
 makes it hard to model? Keep it to a few short paragraphs.>
 
 ---
 
-## The Dataset
+### The Dataset
 
 <How were the training and test sets generated? Assay(s) used, compound sources,
 approximate sizes. The test set has {ACTIVITY_DATASET_SIZE} compounds.>
 
 <!-- TODO: delete this section if the challenge has no wet-lab assay to describe. -->
-## Developing the Assay
+### Developing the Assay
 
 <Assay format, readout, controls, anything participants should know about the
 measurement noise model.>
 
 ---
 
-## 🧪 The Challenge Tracks
+### 🧪 The Challenge Tracks
 
 <Describe each active track. Endpoint names and the submission schema are
 generated automatically from config further down this tab.>
 
-### Regression Track
+#### Regression Track
 <What is predicted, over how many endpoints, and the primary + secondary metrics.>
 
-### Classification Track
+#### Classification Track
 <What is predicted and the primary + secondary metrics. Delete this section if
 CLASSIFICATION_SPEC.endpoints is empty.>
 
-### Structure Track
+#### Structure Track
 <Pose-prediction task description. Delete this section if there is no structure
 track.>
 
@@ -485,7 +530,7 @@ track.>
 
 {HOW_TO_PARTICIPATE_MD if CURRENT_PHASE in [1, 2] else ""}
 
-## 📅 Timeline
+### 📅 Timeline
 
 *All submission deadlines are 23:59 UTC.*
 
@@ -501,7 +546,7 @@ track.>
 
 ---
 
-## Acknowledgements
+### Acknowledgements
 <!-- TODO: name the experimentalists / institutions / funding that contributed to this challenge. -->
 """
 
@@ -510,7 +555,7 @@ track.>
 # format answers below are challenge-agnostic and pull details from config —
 # leave them unless this challenge's rules differ. Rendered on the "About" tab.
 FAQ_MD = f"""
-### Frequently Asked Questions
+## Frequently Asked Questions
 
 **What is the goal of this challenge?**
 <One or two sentences: what participants predict, over how many endpoints, and for
@@ -534,7 +579,7 @@ For technical questions regarding dataset schema, infrastructure, or submission 
 
 ---
 
-#### Evaluation & Scoring
+### Evaluation & Scoring
 
 **How are predictions evaluated in the regression track?**
 <Primary metric (and why it suits this data), then the secondary metrics. All
@@ -550,7 +595,7 @@ low-confidence or below-detection compounds. Delete if no classification track.>
 
 ---
 
-#### Data, Rules & Submissions
+### Data, Rules & Submissions
 
 **Can I use external or proprietary data to train my models?**
 Yes! External data and pretrained models are fully permitted. However, you must disclose whether you used proprietary training data by checking the *"I used proprietary data"* box during submission. This flag will be publicly displayed on the leaderboard.
@@ -563,7 +608,7 @@ No. To maximize open-science velocity and release datasets as quickly as possibl
 
 ---
 
-#### Technical & Submission File Formats
+### Technical & Submission File Formats
 
 **What file formats are required for submission?**
 

@@ -12,7 +12,7 @@ This module knows nothing about S3, tracks or stages; ``leaderboards.py`` builds
 
 import math
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
@@ -124,12 +124,20 @@ class LeaderboardTable:
         columns as ``values``.
     datatypes : dict[str, DataType]
         Every column's ``gr.Dataframe`` datatype.
+    headers : dict[str, str]
+        Header text for columns whose header differs from their name, e.g. with a
+        ↑/↓ for the better direction. The column picker and CSV use the name.
+    styling : pd.DataFrame | None
+        CSS for each cell, e.g. a background colour, or None for no styling. Same
+        index and columns as ``values``.
 
     """
 
     values: pd.DataFrame
     display: pd.DataFrame
     datatypes: dict[str, DataType]
+    headers: dict[str, str] = field(default_factory=dict)
+    styling: pd.DataFrame | None = None
 
     def __post_init__(self) -> None:
         """Check that values, display text and datatypes describe the same cells.
@@ -151,6 +159,11 @@ class LeaderboardTable:
         missing = [c for c in self.values.columns if c not in self.datatypes]
         if missing:
             raise ValueError(f"no datatype for columns {missing}")
+        if self.styling is not None and (
+            list(self.styling.columns) != list(self.values.columns)
+            or not self.styling.index.equals(self.values.index)
+        ):
+            raise ValueError("styling must have the same columns and index as values")
 
     @property
     def columns(self) -> list[str]:
@@ -189,7 +202,29 @@ class LeaderboardTable:
         for column, values in allowed.items():
             if column in self.values.columns:
                 keep &= self.values[column].isin(list(values))
-        return LeaderboardTable(self.values[keep], self.display[keep], self.datatypes)
+        return LeaderboardTable(
+            self.values[keep],
+            self.display[keep],
+            self.datatypes,
+            self.headers,
+            None if self.styling is None else self.styling[keep],
+        )
+
+    def header(self, column: str) -> str:
+        """Return a column's header text.
+
+        Parameters
+        ----------
+        column : str
+            The column's name.
+
+        Returns
+        -------
+        str
+            Its header text.
+
+        """
+        return self.headers.get(column, column)
 
     def to_dataframe_value(self, columns: Sequence[str]) -> dict[str, Any]:
         """Build the ``gr.Dataframe`` value for some of the table's columns.
@@ -202,17 +237,23 @@ class LeaderboardTable:
         Returns
         -------
         dict[str, Any]
-            ``headers``, ``data`` (the values, missing ones as None) and
-            ``metadata.display_value`` (the text).
+            ``headers`` (their header text), ``data`` (the values, missing ones as
+            None), ``metadata.display_value`` (the text) and, with styling,
+            ``metadata.styling``.
 
         """
         columns = list(columns)
         values = self.values[columns].astype(object)
         values = values.where(values.notna(), None)
+        metadata: dict[str, Any] = {
+            "display_value": self.display[columns].to_numpy().tolist()
+        }
+        if self.styling is not None:
+            metadata["styling"] = self.styling[columns].to_numpy().tolist()
         return {
-            "headers": columns,
+            "headers": [self.header(c) for c in columns],
             "data": values.to_numpy().tolist(),
-            "metadata": {"display_value": self.display[columns].to_numpy().tolist()},
+            "metadata": metadata,
         }
 
     def datatypes_for(self, columns: Sequence[str]) -> list[DataType]:
@@ -274,6 +315,8 @@ class LeaderboardTableView:
         The table itself.
     fixed_columns : tuple[str, ...]
         Columns that are always shown.
+    download : gr.DownloadButton | None
+        The CSV download, if the table has one.
 
     """
 
@@ -283,6 +326,7 @@ class LeaderboardTableView:
     columns: gr.CheckboxGroup
     table: gr.Dataframe
     fixed_columns: tuple[str, ...]
+    download: gr.DownloadButton | None = None
 
     @property
     def _inputs(self) -> list[Any]:
@@ -315,18 +359,22 @@ class LeaderboardTableView:
         triggers : Sequence[Any]
             Events to reload on, e.g. ``[demo.load, timer.tick]``.
         load : Callable[[], Any]
-            Loads the latest table. With ``also``, returns a tuple: the table, then
-            a value for each of those components.
+            Loads the latest table. Returns a tuple: the table, then the CSV path if
+            the view has a download button, then a value for each of ``also``. With
+            neither, just the table.
         also : Sequence[Any]
-            Other components ``load`` updates at the same time, e.g. a download
-            button.
+            Other components ``load`` updates at the same time, e.g. a "last
+            checked" note.
 
         Returns
         -------
         None
 
         """
-        gr.on(triggers=list(triggers), fn=load, outputs=[self.state, *also]).then(
+        outputs: list[Any] = [self.state]
+        if self.download is not None:
+            outputs.append(self.download)
+        gr.on(triggers=list(triggers), fn=load, outputs=[*outputs, *also]).then(
             fn=self._apply, inputs=self._inputs, outputs=self.table
         )
 
@@ -336,8 +384,10 @@ def render_leaderboard_table(
     filters: dict[str, list[str]],
     default_columns: Sequence[str],
     fixed_columns: Sequence[str] = ("Rank", SEARCH_COLUMN),
+    download: gr.DownloadButton | None = None,
 ) -> LeaderboardTableView:
-    """Render a leaderboard table with a name search, column filters and a column picker.
+    """Render a leaderboard table with a toolbar (a name search and column filters)
+    and a collapsed column picker.
 
     Parameters
     ----------
@@ -351,6 +401,9 @@ def render_leaderboard_table(
     fixed_columns : Sequence[str]
         Columns that are always shown, and can't be unticked. Keep them first in
         ``table``: they're pinned while the table scrolls sideways.
+    download : gr.DownloadButton | None
+        The table's CSV download button, already rendered wherever the page wants
+        it, so a refresh can update it; None if it has none.
 
     Returns
     -------
@@ -360,22 +413,27 @@ def render_leaderboard_table(
     """
     fixed = tuple(c for c in fixed_columns if c in table.columns)
     optional = [c for c in table.columns if c not in fixed]
-    with gr.Row(equal_height=True):
+    with gr.Row(elem_classes="leaderboard-toolbar"):
         search = gr.Textbox(
             label="Search",
             placeholder="Search by name",
             scale=2,
+            min_width=160,
             max_lines=1,
         )
         filter_boxes = {
             column: gr.CheckboxGroup(
-                choices=choices, value=list(choices), label=column, scale=1
+                choices=choices,
+                value=list(choices),
+                label=column,
+                scale=1,
+                min_width=180,
             )
             for column, choices in filters.items()
         }
     with gr.Accordion("Columns", open=False):
         columns = gr.CheckboxGroup(
-            choices=optional,
+            choices=[(table.header(c), c) for c in optional],
             value=[c for c in default_columns if c in optional],
             show_label=False,
         )
@@ -387,6 +445,7 @@ def render_leaderboard_table(
         show_label=False,
         pinned_columns=len(fixed),
         max_height=600,
+        elem_classes="leaderboard-table",
     )
     view = LeaderboardTableView(
         state=gr.State(table),
@@ -395,6 +454,7 @@ def render_leaderboard_table(
         columns=columns,
         table=dataframe,
         fixed_columns=fixed,
+        download=download,
     )
     gr.on(
         triggers=[

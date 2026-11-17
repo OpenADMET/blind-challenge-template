@@ -32,7 +32,7 @@ def _activity_csv() -> pd.DataFrame:
         "model_report_link": ["https://example.org/b", None, "Not submitted"],
         "used_proprietary_data": [True, False, None],
         "open_source_code": [False, True, False],
-        "Significance (tiers)": [1, 1, 2],
+        "Significance (tiers)": ["Tier 1", "Tier 1", "Tier 2"],  # as the backend writes
     }
     # Written in reverse of the display order, which must be restored.
     for i, metric in enumerate(reversed(list(metric_display_names(REGRESSION_SPEC)))):
@@ -381,3 +381,142 @@ def test_download_structure_leaderboard(s3_files):
     assert df.loc[0, "Username"] == "A&B"
     assert "LDDT-PLI std" in df.columns
     assert "Coverage" in df.columns
+
+
+# --- presentation: headers, shading, flags ---------------------------------------
+
+
+def test_headers_show_which_direction_is_better(s3_files):
+    files, _ = s3_files
+    files[MA_KEY] = _activity_csv()
+    table, _ = _load("live")
+    # The primary metric's direction comes from the spec, the rest from config.
+    assert table.header("MA-ST-RAE") == "MA-ST-RAE ↓"
+    assert table.header("MA-MAE") == "MA-MAE ↓"
+    assert table.header("MA-R²") == "MA-R² ↑"
+    # Headers only: the download and the column names keep the plain name.
+    assert "MA-ST-RAE" in table.columns
+    assert table.to_dataframe_value(["Rank", "MA-ST-RAE"])["headers"] == [
+        "Rank",
+        "MA-ST-RAE ↓",
+    ]
+
+
+def test_primary_metric_is_bold(s3_files):
+    files, _ = s3_files
+    files[MA_KEY] = _activity_csv()
+    table, _ = _load("live")
+    assert table.styling is not None
+    assert all(
+        leaderboards.PRIMARY_METRIC_STYLE in s for s in table.styling["MA-ST-RAE"]
+    )
+    assert not any(
+        leaderboards.PRIMARY_METRIC_STYLE in s for s in table.styling["MA-MAE"]
+    )
+
+
+def test_live_shades_the_top_three(s3_files):
+    files, _ = s3_files
+    files[MA_KEY] = _activity_csv().drop(columns=["Significance (tiers)"])
+    table, _ = _load("live")
+    shades = list(table.styling["Username"])
+    assert shades == [leaderboards.TOP_THREE_SHADES[r] for r in (1, 2, 3)]
+
+
+def test_tiers_alternate_shading(s3_files):
+    files, _ = s3_files
+    files[FINAL_MA_KEY] = _activity_csv()  # Tier 1, Tier 1, Tier 2 by rank
+    table, _ = _load("final")
+    assert list(table.styling["Username"]) == [
+        leaderboards.TIER_SHADE,
+        leaderboards.TIER_SHADE,
+        "",
+    ]
+    # Filtering keeps each row's styling with it.
+    filtered = table.filter("carol", {})
+    assert list(filtered.styling["Username"]) == [""]
+
+
+def test_flags_show_as_marks_but_filter_on_yes_no(s3_files):
+    files, _ = s3_files
+    files[MA_KEY] = _activity_csv()
+    table, _ = _load("live")
+    assert list(table.display["Open Code"]) == ["✓", "–", "–"]
+    assert list(table.filter("", {"Open Code": ["Yes"]}).values["Rank"]) == [1]
+
+
+# --- the endpoint picker ----------------------------------------------------------
+
+
+def test_multi_endpoint_track_has_one_visible_board_and_a_picker(s3_files):
+    import gradio as gr
+
+    with gr.Blocks() as demo:
+        views = leaderboards._add_track("interim", REGRESSION_SPEC)
+    assert list(views) == [MACRO_ENDPOINT_LABEL, *REGRESSION_SPEC.endpoints]
+    [picker] = [
+        b
+        for b in demo.blocks.values()
+        if isinstance(b, gr.Dropdown) and b.label == "Endpoint"
+    ]
+    assert picker.value == MACRO_ENDPOINT_LABEL
+    assert picker.choices[0] == ("Overall (macro average)", MACRO_ENDPOINT_LABEL)
+    columns = [b for b in demo.blocks.values() if isinstance(b, gr.Column)]
+    assert [c.visible for c in columns] == [True] + [False] * len(
+        REGRESSION_SPEC.endpoints
+    )
+
+
+def test_single_endpoint_track_has_no_picker(s3_files):
+    import gradio as gr
+
+    with gr.Blocks() as demo:
+        views = leaderboards._add_track("interim", STRUCTURE_SPEC)
+    assert list(views) == ["structure"]
+    assert not any(
+        isinstance(b, gr.Dropdown) and b.label == "Endpoint"
+        for b in demo.blocks.values()
+    )
+
+
+def test_tier_column_sorts_by_number_and_shows_the_label(s3_files):
+    files, _ = s3_files
+    csv = _activity_csv()
+    csv["Significance (tiers)"] = ["Tier 10", "Tier 2", "Tier 9"]
+    files[FINAL_MA_KEY] = csv
+    table, _ = _load("final")
+    assert table.datatypes["Significance (tiers)"] == "number"
+    assert list(table.values["Significance (tiers)"]) == [2, 10, 9]  # by rank
+    assert list(table.display["Significance (tiers)"]) == [
+        "Tier 2",
+        "Tier 10",
+        "Tier 9",
+    ]
+    # Odd tiers are shaded: Tier 9 is, Tier 2 and Tier 10 aren't.
+    assert list(table.styling["Username"]) == ["", "", leaderboards.TIER_SHADE]
+
+
+def test_each_endpoint_has_its_own_download_button(s3_files):
+    import gradio as gr
+
+    with gr.Blocks() as demo:
+        views = leaderboards._add_track("interim", REGRESSION_SPEC)
+    buttons = [b for b in demo.blocks.values() if isinstance(b, gr.DownloadButton)]
+    assert len(buttons) == len(views)
+    # Only the selected endpoint's button shows; the picker switches it with the table.
+    assert [b.visible for b in buttons] == [True] + [False] * (len(buttons) - 1)
+    assert all(view.download in buttons for view in views.values())
+
+
+def test_tier_column_shows_by_default_where_there_is_one(s3_files):
+    import gradio as gr
+
+    files, _ = s3_files
+    files[FINAL_MA_KEY] = _activity_csv()
+    files[MA_KEY] = _activity_csv().drop(columns=["Significance (tiers)"])
+    with gr.Blocks():
+        final = leaderboards._add_track("final", REGRESSION_SPEC)[MACRO_ENDPOINT_LABEL]
+        live = leaderboards._add_track("live", REGRESSION_SPEC)[MACRO_ENDPOINT_LABEL]
+    assert "Significance (tiers)" in final.table.value["headers"]
+    assert "Significance (tiers)" in final.columns.value
+    assert "Significance (tiers)" not in live.table.value["headers"]

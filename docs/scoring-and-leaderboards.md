@@ -194,7 +194,11 @@ flowchart TD
 The Space reads each leaderboard CSV from S3 and shows it as a table:
 
 - **Scores** show as "mean ± std" but sort by the mean, numerically. Sorting is
-  in each column header's ⋮ menu.
+  in each column header's ⋮ menu. Headers show ↑/↓ for which direction is better
+  (`METRIC_HIGHER_IS_BETTER`, and the spec's `higher_is_better` for the primary
+  metric), and the primary metric's column is bold.
+- **Shading** alternates between significance tiers on interim and final
+  leaderboards, and marks the top three on the live leaderboard.
 - **Precision** is set per stage in `hf_space/config.py`: `LEADERBOARD_SIG_FIGS`
   (2 significant figures on the live leaderboard, 3 on interim and final). On
   `ROUNDED_STAGES` (live) the sort values and the download are rounded too, so the
@@ -202,9 +206,11 @@ The Space reads each leaderboard CSV from S3 and shows it as a table:
 - **Usernames** sort by the name shown, ignoring case. An anonymous entry shows
   its alias (searchable by the alias only) and isn't linked to the user's profile.
   Names longer than 24 characters are shortened, with the full name on hover.
+- A track with several endpoints has an **endpoint picker** choosing between
+  the macro-averaged leaderboard and each endpoint's own.
 - Visitors can **search** by name, **filter** on proprietary data and open code,
-  and **show or hide columns**. Columns the Space doesn't list itself, such as
-  the significance tiers, start hidden. A live refresh keeps these choices.
+  and **show or hide columns**. The significance tiers column shows where a
+  leaderboard has one; other columns the Space doesn't list itself start hidden. A live refresh keeps these choices.
 - **Download CSV** gives each score's mean and std in separate columns, so the
   file can be sorted by either in a spreadsheet: full precision on interim and
   final, rounded on live.

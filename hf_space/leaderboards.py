@@ -9,6 +9,7 @@ table itself (sorting, search, filters, column picker) is in ``leaderboard_table
 import html
 import os
 import tempfile
+from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from config import (
     LEADERBOARD_URI_FORMAT,
     MACRO_ENDPOINT_LABEL,
     METRIC_DISPLAY_NAMES,
+    METRIC_HIGHER_IS_BETTER,
     ROUNDED_STAGES,
     TRACK_NAMES,
     TRACK_SPECS,
@@ -45,6 +47,32 @@ REFRESH_SECONDS = 30
 # Longer names are cut short in the table, with the full name on hover, so one long
 # alias can't make the Username column very wide.
 MAX_NAME_CHARS = 24
+# Tier labels are "Tier 1", "Tier 2", ...; the column sorts by the number.
+TIER_COLUMN = "Significance (tiers)"
+# Row shading: every other significance tier on interim and final leaderboards, and
+# the top three on the live leaderboard (which has no tiers). Mixed from theme
+# colours, so they suit light and dark mode.
+TIER_SHADE = "background: color-mix(in srgb, var(--color-accent) 7%, transparent);"
+TOP_THREE_SHADES = {
+    1: "background: color-mix(in srgb, #f5b301 22%, transparent);",
+    2: "background: color-mix(in srgb, #8b9bb4 38%, transparent);",
+    3: "background: color-mix(in srgb, #c2773a 20%, transparent);",
+}
+PRIMARY_METRIC_STYLE = "font-weight: 700;"
+FLAG_TEXT = {"Yes": "✓", "No": "–"}
+STAGE_NOTES = {
+    "live": (
+        "Scores are mean ± std over bootstrap samples, to 2 significant figures. "
+        "Ranked by the **bold** column; ↑/↓ shows which direction is better. Sort "
+        "from the ⋮ menu in a column header. Refreshes every {refresh} seconds."
+    ),
+    "interim": (
+        "Scores are mean ± std over bootstrap samples. Ranked by the **bold** "
+        "column; ↑/↓ shows which direction is better. Shading alternates between "
+        "significance tiers. Sort from the ⋮ menu in a column header."
+    ),
+}
+STAGE_NOTES["final"] = STAGE_NOTES["interim"]
 # Where the CSV downloads are written. One file per leaderboard, overwritten on
 # each refresh, so they don't pile up.
 DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "leaderboard_downloads"
@@ -366,7 +394,8 @@ def _build_table(
     links = df["model_report_link"].astype(str)
     add("Model Report Link", links, links.map(make_tag_clickable), "html")
 
-    labels = list(score_labels(spec, metric_prefix).values())
+    label_of = score_labels(spec, metric_prefix)
+    labels = list(label_of.values())
     for label in labels:
         if label not in df.columns:
             continue
@@ -389,14 +418,57 @@ def _build_table(
         *(f"{label} std" for label in labels),
         *FILTERS,
     }
+    if TIER_COLUMN in df.columns:
+        add(
+            TIER_COLUMN,
+            _tier_numbers(df[TIER_COLUMN]),
+            _text(df[TIER_COLUMN]),
+            "number",
+        )
+        known.add(TIER_COLUMN)
     for column in df.columns:
         if column not in known:
             numeric = pd.api.types.is_numeric_dtype(df[column])
             add(column, df[column], _text(df[column]), "number" if numeric else "str")
 
     for column in FILTERS:
-        add(column, df[column], df[column], "str")
-    return LeaderboardTable(pd.DataFrame(values), pd.DataFrame(display), datatypes)
+        add(column, df[column], df[column].map(FLAG_TEXT).fillna(df[column]), "str")
+
+    headers = {}
+    for base, label in label_of.items():
+        higher = (
+            spec.higher_is_better
+            if base == spec.primary_metric
+            else METRIC_HIGHER_IS_BETTER.get(base)
+        )
+        if higher is not None and label in values:
+            headers[label] = f"{label} {'↑' if higher else '↓'}"
+
+    styling = pd.DataFrame("", index=df.index, columns=list(values))
+    row_styles = _row_styles(df)
+    for column in styling.columns:
+        styling[column] = row_styles
+    primary = label_of.get(spec.primary_metric)
+    if primary in styling.columns:
+        styling[primary] = styling[primary] + PRIMARY_METRIC_STYLE
+    return LeaderboardTable(
+        pd.DataFrame(values), pd.DataFrame(display), datatypes, headers, styling
+    )
+
+
+def _tier_numbers(labels: pd.Series) -> pd.Series:
+    """Read the number from each tier label ("Tier 2" -> 2); NaN if there isn't one."""
+    return pd.to_numeric(
+        labels.astype(str).str.extract(r"(\d+)", expand=False), errors="coerce"
+    )
+
+
+def _row_styles(df: pd.DataFrame) -> pd.Series:
+    """Shade every other significance tier, or the top three rows if there are none."""
+    if TIER_COLUMN in df.columns:
+        tiers = _tier_numbers(df[TIER_COLUMN])
+        return tiers.map(lambda t: TIER_SHADE if pd.notna(t) and t % 2 == 1 else "")
+    return df["rank"].map(lambda r: TOP_THREE_SHADES.get(r, ""))
 
 
 def _empty_table(spec: TrackSpec, metric_prefix: str = "") -> LeaderboardTable:
@@ -500,13 +572,13 @@ def _write_csv(df: pd.DataFrame, path: Path) -> None:
 
 def render_interim_leaderboards():
     """Render the interim leaderboards for the Gradio app."""
-    gr.Markdown("# Interim Leaderboards")
+    gr.Markdown("## Interim Leaderboards")
     _add_leaderboard_tabs(leaderboard_type="interim")
 
 
 def render_final_leaderboards(phase: int):
     """Render the final leaderboards for the Gradio app."""
-    gr.Markdown("# Final Leaderboards")
+    gr.Markdown("## Final Leaderboards")
     if phase == 3:
         gr.Markdown(
             "The final leaderboard is being prepared and will be available shortly. "
@@ -519,41 +591,38 @@ def render_final_leaderboards(phase: int):
 def render_live_leaderboards(phase: int, demo: gr.Blocks):
     """Render the live leaderboards for the Gradio app."""
     if phase == 0:
-        gr.Markdown("# Live Leaderboards (Coming Soon)")
+        gr.Markdown("## Live Leaderboards (Coming Soon)")
         gr.Markdown(
             "The challenge has not yet started. Leaderboards will be available once the"
             " challenge begins. Please check back once the challenge opens."
         )
     else:
-        gr.Markdown("# Live Leaderboards")
+        gr.Markdown("## Live Leaderboards")
         _add_leaderboard_tabs(leaderboard_type="live", demo=demo)
 
 
-def _add_leaderboard(
+def _last_checked() -> str:
+    """Return the "last checked" note under a live leaderboard."""
+    return f"Last checked {datetime.now(timezone.utc):%H:%M} UTC"
+
+
+def _load_live(
     stage: LeaderboardStage, spec: TrackSpec, endpoint_slug: str
-) -> tuple[LeaderboardTableView, gr.DownloadButton]:
-    """Render one leaderboard: its download button and table.
-
-    The button holds the CSV already, so one click downloads it.
-    """
+) -> tuple[LeaderboardTable, str, str]:
+    """Load a live leaderboard with its download and "last checked" note."""
     table, csv_path = load_leaderboard(stage, spec, endpoint_slug)
-    download = gr.DownloadButton(label="Download CSV", value=csv_path, size="sm")
-    view = render_leaderboard_table(
-        table,
-        filters=FILTERS,
-        default_columns=_default_columns(spec, _metric_prefix(endpoint_slug)),
-    )
-    return view, download
+    return table, csv_path, _last_checked()
 
 
-def _add_track_tabs(
-    stage: LeaderboardStage, spec: TrackSpec
-) -> dict[str, tuple[LeaderboardTableView, gr.DownloadButton]]:
-    """Render a track's leaderboards.
-
-    With more than one endpoint, a "🏆 Overall" (macro-averaged) tab plus one tab per
-    endpoint. With one endpoint, just its leaderboard: an Overall tab would be the
-    same.
+def _add_leaderboard(
+    stage: LeaderboardStage,
+    spec: TrackSpec,
+    endpoint_slug: str,
+    table: LeaderboardTable,
+    download: gr.DownloadButton,
+    refresh_on: list | None = None,
+) -> LeaderboardTableView:
+    """Render one leaderboard's toolbar and table.
 
     Parameters
     ----------
@@ -561,25 +630,118 @@ def _add_track_tabs(
         "live", "interim" or "final".
     spec : TrackSpec
         The track.
+    endpoint_slug : str
+        One of ``spec.endpoints``, or ``MACRO_ENDPOINT_LABEL``.
+    table : LeaderboardTable
+        The leaderboard, already loaded.
+    download : gr.DownloadButton
+        Its CSV download button, rendered above with the endpoint picker.
+    refresh_on : list | None
+        Events to reload the leaderboard on, with a "last checked" note under it,
+        or None for a leaderboard loaded once.
 
     Returns
     -------
-    dict[str, tuple[LeaderboardTableView, gr.DownloadButton]]
-        Endpoint slug (or ``MACRO_ENDPOINT_LABEL``) to its table and download
-        button.
+    LeaderboardTableView
+        The rendered table.
 
     """
-    if len(spec.endpoints) == 1:
-        slug = spec.endpoints[0]
-        return {slug: _add_leaderboard(stage, spec, slug)}
-    views: dict[str, tuple[LeaderboardTableView, gr.DownloadButton]] = {}
-    with gr.Tabs():
-        for slug in [MACRO_ENDPOINT_LABEL, *spec.endpoints]:
-            title = (
-                "🏆 Overall" if slug == MACRO_ENDPOINT_LABEL else slug.replace("_", " ")
+    view = render_leaderboard_table(
+        table,
+        filters=FILTERS,
+        # The tier column shows by default where the leaderboard has one (interim
+        # and final), so the shaded bands have their labels.
+        default_columns=[
+            *_default_columns(spec, _metric_prefix(endpoint_slug)),
+            TIER_COLUMN,
+        ],
+        download=download,
+    )
+    if refresh_on is not None:
+        note = gr.Markdown(_last_checked(), elem_classes="leaderboard-note")
+        view.refresh_on(
+            refresh_on, partial(_load_live, stage, spec, endpoint_slug), also=[note]
+        )
+    return view
+
+
+def _endpoint_label(slug: str) -> str:
+    """Name an endpoint in the endpoint picker."""
+    if slug == MACRO_ENDPOINT_LABEL:
+        return "Overall (macro average)"
+    return slug.replace("_", " ")
+
+
+def _add_track(
+    stage: LeaderboardStage, spec: TrackSpec, refresh_on: list | None = None
+) -> dict[str, LeaderboardTableView]:
+    """Render a track's leaderboards.
+
+    A row of controls sits above the table: with more than one endpoint, an
+    endpoint picker choosing between the macro-averaged leaderboard ("Overall") and
+    each endpoint's own, then the chosen leaderboard's Download CSV button. With
+    one endpoint, just its leaderboard and button: an Overall one would be the same.
+
+    Parameters
+    ----------
+    stage : LeaderboardStage
+        "live", "interim" or "final".
+    spec : TrackSpec
+        The track.
+    refresh_on : list | None
+        Events to reload the leaderboards on, or None to load them once.
+
+    Returns
+    -------
+    dict[str, LeaderboardTableView]
+        Endpoint slug (or ``MACRO_ENDPOINT_LABEL``) to its rendered table.
+
+    """
+    slugs = (
+        [MACRO_ENDPOINT_LABEL, *spec.endpoints]
+        if len(spec.endpoints) > 1
+        else list(spec.endpoints)
+    )
+    loaded = {slug: load_leaderboard(stage, spec, slug) for slug in slugs}
+    first = slugs[0]
+    with gr.Row(equal_height=True, elem_classes="track-controls"):
+        picker = (
+            gr.Dropdown(
+                choices=[(_endpoint_label(s), s) for s in slugs],
+                value=first,
+                label="Endpoint",
+                scale=0,
+                min_width=280,
             )
-            with gr.TabItem(title):
-                views[slug] = _add_leaderboard(stage, spec, slug)
+            if len(slugs) > 1
+            else None
+        )
+        downloads = [
+            gr.DownloadButton(
+                "⬇ Download CSV",
+                value=loaded[slug][1],
+                visible=slug == first,
+                variant="secondary",
+                scale=0,
+                min_width=220,
+                elem_classes="download-button",
+            )
+            for slug in slugs
+        ]
+    views: dict[str, LeaderboardTableView] = {}
+    groups: list[gr.Column] = []
+    for slug, download in zip(slugs, downloads):
+        with gr.Column(visible=slug == first) as group:
+            views[slug] = _add_leaderboard(
+                stage, spec, slug, loaded[slug][0], download, refresh_on
+            )
+        groups.append(group)
+    if picker is not None:
+        picker.change(
+            lambda chosen: [gr.update(visible=s == chosen) for s in slugs] * 2,
+            inputs=picker,
+            outputs=[*groups, *downloads],
+        )
     return views
 
 
@@ -611,11 +773,16 @@ def _add_leaderboard_tabs(
 
     """
     visibility = TRACK_VISIBILITY if visibility is None else visibility
-    live = leaderboard_type == "live"
-    if live and demo is None:
-        raise ValueError("demo is required to wire live leaderboards")
-    timer = gr.Timer(value=REFRESH_SECONDS) if live else None
+    refresh_on = None
+    if leaderboard_type == "live":
+        if demo is None:
+            raise ValueError("demo is required to wire live leaderboards")
+        refresh_on = [demo.load, gr.Timer(value=REFRESH_SECONDS).tick]
 
+    gr.Markdown(
+        STAGE_NOTES[leaderboard_type].format(refresh=REFRESH_SECONDS),
+        elem_classes="leaderboard-note",
+    )
     with gr.Tabs():
         for spec in TRACK_SPECS.values():
             if not spec.endpoints or not visibility[spec.track].on_leaderboard(
@@ -623,11 +790,4 @@ def _add_leaderboard_tabs(
             ):
                 continue
             with gr.TabItem(TRACK_NAMES[spec.track]):
-                views = _add_track_tabs(leaderboard_type, spec)
-            if timer is not None and demo is not None:
-                for slug, (view, download) in views.items():
-                    view.refresh_on(
-                        [demo.load, timer.tick],
-                        partial(load_leaderboard, leaderboard_type, spec, slug),
-                        also=[download],
-                    )
+                _add_track(leaderboard_type, spec, refresh_on)

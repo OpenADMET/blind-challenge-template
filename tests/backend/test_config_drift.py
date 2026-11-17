@@ -57,6 +57,8 @@ def test_track_spec_matches(track):
         "COMPOUND_SETS",
         "LEADERBOARD_STAGES",
         "DEFAULT_LEADERBOARD_SETS",
+        "INTERIM_LEADERBOARD_DEADLINE",
+        "FINAL_LEADERBOARD_DEADLINE",
     ],
 )
 def test_shared_constant_matches(name):
