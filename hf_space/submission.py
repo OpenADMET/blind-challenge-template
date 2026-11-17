@@ -57,18 +57,44 @@ from config import (
     TUTORIAL_LINK,
     TrackVisibility,
 )
+from bans import BAN_LIST_KEY, BanListCache, BanListUnavailable, find_ban
+from bans import reason_message as ban_reason_message
 from gradio.utils import get_space
 from loguru import logger
 from models import Submission
 from utils import (
-    BANNED_USERNAMES,
     HFAccount,
     _safeify_username,
     fetch_hf_account,
+    s3_client,
     validate_model_details,
 )
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _read_ban_list() -> str:
+    """Read the ban list file from the challenge bucket.
+
+    Returns
+    -------
+    str
+        The file's contents.
+
+    Raises
+    ------
+    RuntimeError
+        If ``S3_BUCKET`` isn't set.
+
+    """
+    if not S3_BUCKET:
+        raise RuntimeError("S3_BUCKET not set; can't read the ban list.")
+    obj = s3_client.get_object(Bucket=S3_BUCKET, Key=BAN_LIST_KEY)
+    return obj["Body"].read().decode("utf-8")
+
+
+# The Space's copy of the ban list, shared by every session.
+BAN_LIST = BanListCache(fetch=_read_ban_list)
 
 # The track names on the form, and the S3 track prefix each submission goes under.
 TRACK_SLUGS = {
@@ -537,6 +563,42 @@ def account_error(
     return None, account
 
 
+def ban_error(username: str, hf_user_id: str) -> str | None:
+    """Check the ban list, failing closed.
+
+    Parameters
+    ----------
+    username : str
+        The logged-in username.
+    hf_user_id : str
+        The account's permanent ID (OAuth ``sub``), so a renamed account stays
+        banned.
+
+    Returns
+    -------
+    str | None
+        A message if the account is banned, or if the ban list can't be read and
+        there's no earlier copy; None if the account can submit.
+
+    """
+    try:
+        bans = BAN_LIST.get()
+    except BanListUnavailable:
+        return (
+            "Error: Submissions are temporarily unavailable. Please try again in a "
+            "few minutes."
+        )
+    ban = find_ban(bans, username, hf_user_id)
+    if ban is None:
+        return None
+    logger.warning(f"Blocked submission from banned account {username!r}")
+    return (
+        f"Error: Your account ({username!r}) has been blocked. Reason: "
+        f"{ban_reason_message(ban['reason_code'])}. If you believe this is a "
+        "mistake, please contact the organisers."
+    )
+
+
 def _format_submission_time_message(last_submission: datetime, track: str) -> str:
     """Format a message indicating when the user can next submit next."""
     next_submission_time = last_submission + pd.Timedelta(
@@ -735,14 +797,9 @@ def submit_predictions(
     if error:
         return _status(error)
     assert account is not None  # guaranteed by account_error when error is None
-    banned_reason = BANNED_USERNAMES.get(username.lower())
-    if banned_reason:
-        logger.warning(f"Blocked submission attempt from banned username: {username!r}")
-        return _status(
-            f"Error: Your account ({username!r}) has been blocked. Reason: "
-            f"{banned_reason}. If you believe this is a mistake, please contact the "
-            "organisers."
-        )
+    error = ban_error(username, str(profile.get("sub", "")))
+    if error:
+        return _status(error)
 
     # --- the form ---
     if anon_checkbox and (not user_alias or not user_alias.strip()):

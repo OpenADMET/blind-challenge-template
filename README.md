@@ -47,6 +47,7 @@ The quickest way to see every fill-in point at once is the [**Todo Tree**](https
 - [docs/scoring-and-leaderboards.md](docs/scoring-and-leaderboards.md) — How a regression or classification submission turns into bootstrapped per-endpoint metrics, a macro-averaged ("MA") score, and each track's per-endpoint + overall leaderboards
 - [docs/structure-scoring.md](docs/structure-scoring.md) — How a structure submission's PDB files turn into per-compound pose-quality scores (LDDT-PLI/BiSyRMSD/LDDT-LP) and the structure leaderboard
 - [docs/phases-and-stages.md](docs/phases-and-stages.md) — Compound sets (`live`/`hidden`/`all`), leaderboard stages, and the HF Space's `CURRENT_PHASE`, and how they relate
+- [docs/bans.md](docs/bans.md) — Banning participants: the ban list, `scripts/manage_bans.py`, and how bans relate to removing entries
 
 ---
 

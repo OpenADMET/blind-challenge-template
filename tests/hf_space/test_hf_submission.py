@@ -20,6 +20,10 @@ from models import Submission
 from submission import MAX_ALIAS_LENGTH, alias_error, model_report_link_error
 from utils import HFAccount
 
+import bans
+
+HEADER_ONLY = ",".join(bans.COLUMNS) + "\n"
+
 OLD_ACCOUNT = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
 
@@ -180,6 +184,9 @@ def known_user(monkeypatch):
         lambda name: HFAccount(id=f"sub-{name}", created_at=OLD_ACCOUNT),
     )
     monkeypatch.setattr(submission, "_on_space", lambda: False)
+    monkeypatch.setattr(
+        submission, "BAN_LIST", bans.BanListCache(fetch=lambda: HEADER_ONLY)
+    )
 
 
 @pytest.fixture
@@ -441,13 +448,53 @@ def test_account_id_isnt_compared_locally(known_user):
     assert error is None
 
 
+def _ban_list(*rows: str) -> bans.BanListCache:
+    return bans.BanListCache(fetch=lambda: HEADER_ONLY + "".join(rows))
+
+
 def test_submit_blocks_banned_username_case_insensitively(
     monkeypatch, known_user, no_upload
 ):
-    monkeypatch.setitem(submission.BANNED_USERNAMES, "mallory", "Multiple accounts")
+    monkeypatch.setattr(
+        submission,
+        "BAN_LIST",
+        _ban_list("mallory,,multiple_accounts,saw X's files,2026-11-01,org,,\n"),
+    )
     result = _submit(profile=_profile("Mallory"))
     assert "has been blocked" in result["value"]
-    assert "Multiple accounts" in result["value"]
+    assert bans.REASON_MESSAGES["multiple_accounts"] in result["value"]
+    # The internal note is never shown.
+    assert "saw X" not in result["value"]
+
+
+def test_submit_blocks_a_renamed_banned_account(monkeypatch, known_user, no_upload):
+    monkeypatch.setattr(
+        submission,
+        "BAN_LIST",
+        _ban_list("old-name,sub-new-name,rule_violation,,2026-11-01,org,,\n"),
+    )
+    result = _submit(profile=_profile("new-name"))
+    assert "has been blocked" in result["value"]
+
+
+def test_submit_allows_a_reinstated_account(monkeypatch, known_user, uploads, tmp_path):
+    monkeypatch.setattr(
+        submission,
+        "BAN_LIST",
+        _ban_list("alice,,rule_violation,,2026-11-01,org,,2026-11-02\n"),
+    )
+    monkeypatch.setattr(submission, "_fetch_last_submission_date", lambda *a: None)
+    result = _submit(file_input=_valid_file("Regression Prediction", tmp_path))
+    assert result["value"].startswith("Submission received")
+
+
+def test_submit_fails_closed_without_a_ban_list(monkeypatch, known_user, no_upload):
+    def _unreadable():
+        raise ConnectionError("S3 down")
+
+    monkeypatch.setattr(submission, "BAN_LIST", bans.BanListCache(fetch=_unreadable))
+    result = _submit()
+    assert "temporarily unavailable" in result["value"]
 
 
 def test_submit_anonymous_needs_alias(known_user, no_upload):

@@ -136,9 +136,16 @@ leaderboard/interim/{regression,classification,structure}/ ← Generated manuall
 
 leaderboard/final/{regression,classification,structure}/   ← Generated manually from
   MA_leaderboard_latest.csv                 the final stage's set, submissions before the
-  {endpoint files as above per track}       final deadline, with invalid submissions (bad
-  structure_leaderboard_latest.csv          HF username / model report link) removed. Same
-                                             significance-testing scope as interim.
+  {endpoint files as above per track}       final deadline; with REQUIRE_MODEL_REPORT,
+  structure_leaderboard_latest.csv          entries without a reachable model report are
+                                             removed. Same significance-testing scope as
+                                             interim.
+
+admin/
+  banned_users.csv                        ← The participant ban list (docs/bans.md).
+                                             Created header-only by `tofu apply`, then
+                                             edited only with scripts/manage_bans.py.
+                                             The Space reads it; can't write it.
 
 entries/                                  ← Full cross-track (regression +
   all_entries_latest.csv                    classification + structure) entries list.
@@ -164,6 +171,7 @@ entries/                                  ← Full cross-track (regression +
 
 - `s3:PutObject` on `submissions/*`
 - `s3:GetObject` on `leaderboard/*` only (the app reads the leaderboard CSVs). It has no read access to `submissions/*`: those are other participants' predictions, and the Space only writes them.
+- `s3:GetObject` on `admin/banned_users.csv` (the ban list), read-only, so a leaked Space key can't lift bans.
 - An explicit `Deny` on `s3:GetObject` for `ground_truth/*`, so an `Allow` added later by mistake can't expose it.
 - `s3:ListBucket` on the main bucket, limited to `submissions/regression/*`, `submissions/classification/*`, `submissions/structure/*`, and `leaderboard/*` prefixes (including `live`, `interim`, `final`)
 
@@ -368,6 +376,7 @@ mechanism.
 | `force_destroy = var.force_destroy` (default `false`) | S3 bucket | Bucket must be empty to destroy unless explicitly overridden |
 | `DenyDeleteSubmissions` bucket policy | S3 bucket | No principal can delete objects under `submissions/*`. Manifests live under `manifests/`, so removing a leaderboard entry never needs this lifted |
 | `DenyInsecureTransport` bucket policy | S3 bucket | All non-HTTPS requests denied |
+| `lifecycle { ignore_changes = all }` | `admin/banned_users.csv` | `tofu apply` creates the ban list once and never overwrites organisers' bans |
 | `reserved_concurrent_executions = 5` | Evaluator Lambdas | Caps concurrent evaluation runs to limit runaway costs |
 | Public access block (all four settings) | S3 bucket | Bucket can never be made public |
 

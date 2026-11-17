@@ -33,6 +33,14 @@ resource "aws_iam_user_policy" "hf_space" {
         Resource = "${aws_s3_bucket.main.arn}/leaderboard/*"
       },
       {
+        # The ban list (#22): read-only, so a compromised Space key can't lift
+        # bans. Organisers write it with scripts/manage_bans.py.
+        Sid      = "GetBanList"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${aws_s3_bucket.main.arn}/admin/banned_users.csv"
+      },
+      {
         # The Space must never read ground truth. An explicit Deny also beats any
         # Allow added here later by mistake.
         Sid      = "DenyGroundTruth"
