@@ -7,3 +7,4 @@ pyarrow==25.0.1
 numpy==2.5.3
 pydantic==2.12.3
 requests==2.34.2
+uuid-utils==1.2.0
