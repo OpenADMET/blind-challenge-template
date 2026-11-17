@@ -9,8 +9,8 @@ The shapes are the minimum the test suite needs:
 
 * activity ground truth / submissions: ``ACTIVITY_DATASET_SIZE`` rows (the
   submission validators check the row count against that constant).
-* bootstrap-score fixtures: ``BOOTSTRAP_SAMPLES`` samples per endpoint plus a
-  macro ("MA") block, built with the real ``compute_macro_bootstrap_results`` so
+* bootstrap-score fixtures: ``TEST_BOOTSTRAP_SAMPLES`` (1000) samples per endpoint
+  plus a macro ("MA") block, built with the real ``compute_macro_bootstrap_results`` so
   ``test_compute_macro_bootstrap_results_matches_fixture`` stays exact.
 * structure fixtures: a small set of stub structures (no test parses PDB
   content or checks the count against ``STRUCTURE_DATASET_SIZE``).
@@ -36,7 +36,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from backend.config import (
     ACTIVITY_DATASET_SIZE,
-    BOOTSTRAP_SAMPLES,
     CLASSIFICATION_SPEC,
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
     REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX,
@@ -47,6 +46,9 @@ from backend.evaluate_predictions import (  # noqa: E402
 )
 
 SEED = 20240101
+# Bootstrap samples in the stored fixtures; must match
+# backend_test_settings.TEST_BOOTSTRAP_SAMPLES.
+TEST_BOOTSTRAP_SAMPLES = 1000
 DATA_DIR = Path(__file__).parent / "test_data"
 N_STRUCTURES = 12
 
@@ -168,9 +170,9 @@ def _raw_bootstrap_block(
 ) -> pd.DataFrame:
     frames = []
     for endpoint in endpoints:
-        block = {"Sample": np.arange(BOOTSTRAP_SAMPLES), "Endpoint": endpoint}
+        block = {"Sample": np.arange(TEST_BOOTSTRAP_SAMPLES), "Endpoint": endpoint}
         for metric, (low, high) in metric_ranges.items():
-            block[metric] = rng.uniform(low, high, size=BOOTSTRAP_SAMPLES)
+            block[metric] = rng.uniform(low, high, size=TEST_BOOTSTRAP_SAMPLES)
         frames.append(pd.DataFrame(block))
     return pd.concat(frames, ignore_index=True)
 

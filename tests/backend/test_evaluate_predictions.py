@@ -5,7 +5,6 @@ import pandas as pd
 import pytest
 
 from backend.config import (
-    BOOTSTRAP_SAMPLES,
     CLASSIFICATION_SPEC,
     MACRO_ENDPOINT_LABEL,
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
@@ -24,6 +23,8 @@ from backend.evaluate_predictions import (
     pivot_endpoint_results_wide,
     score_activity_predictions,
 )
+
+from backend_test_settings import TEST_BOOTSTRAP_SAMPLES
 
 # Every endpoint scored against the shared activity ground truth.
 ACTIVITY_ENDPOINTS = REGRESSION_SPEC.endpoints + CLASSIFICATION_SPEC.endpoints
@@ -54,7 +55,7 @@ def test_score_activity_predictions(
         endpoints=ACTIVITY_ENDPOINTS,
     )
     assert not scored_df.empty
-    assert scored_df.shape[0] == BOOTSTRAP_SAMPLES * len(ACTIVITY_ENDPOINTS)
+    assert scored_df.shape[0] == TEST_BOOTSTRAP_SAMPLES * len(ACTIVITY_ENDPOINTS)
     assert set(scored_df["Endpoint"]) == set(ACTIVITY_ENDPOINTS)
     assert MACRO_ENDPOINT_LABEL not in set(scored_df["Endpoint"])
 
@@ -102,7 +103,7 @@ def test_score_activity_predictions_excludes_missing_classification_ground_truth
     # bootstrap_metrics always produces one row per bootstrap iteration regardless of
     # pool size — the missing-label compound(s) are dropped from the resampling pool
     # before bootstrapping, not from the row count.
-    assert len(endpoint_samples) == BOOTSTRAP_SAMPLES
+    assert len(endpoint_samples) == TEST_BOOTSTRAP_SAMPLES
 
 
 def test_bootstrap_metrics_regression(
@@ -125,7 +126,7 @@ def test_bootstrap_metrics_regression(
         example_activity_predictions_data.loc[has_ground_truth, endpoint].to_numpy(),
         example_activity_ground_truth_data.loc[has_ground_truth, endpoint].to_numpy(),
         endpoint,
-        n_bootstrap_samples=BOOTSTRAP_SAMPLES,
+        n_bootstrap_samples=TEST_BOOTSTRAP_SAMPLES,
         metrics=REGRESSION_SPEC.metric_functions,
         y_true_upper=example_activity_ground_truth_data.loc[
             has_ground_truth, upper_col
@@ -136,7 +137,7 @@ def test_bootstrap_metrics_regression(
     )
     assert not bootstrap_df.empty
     assert bootstrap_df.shape == (
-        BOOTSTRAP_SAMPLES,
+        TEST_BOOTSTRAP_SAMPLES,
         len(REGRESSION_SPEC.metric_functions) + 2,  # +2 for Endpoint and Sample columns
     )
     assert set(bootstrap_df.columns) == set(
@@ -217,12 +218,12 @@ def test_bootstrap_metrics_classification(
         y_pred,
         y_true,
         endpoint,
-        n_bootstrap_samples=BOOTSTRAP_SAMPLES,
+        n_bootstrap_samples=TEST_BOOTSTRAP_SAMPLES,
         metrics=CLASSIFICATION_SPEC.metric_functions,
     )
     assert not bootstrap_df.empty
     assert bootstrap_df.shape == (
-        BOOTSTRAP_SAMPLES,
+        TEST_BOOTSTRAP_SAMPLES,
         len(CLASSIFICATION_SPEC.metric_functions)
         + 2,  # +2 for Endpoint and Sample columns
     )
@@ -248,7 +249,7 @@ def test_add_macro_endpoint_regression(example_regression_bootstrap_scores):
     assert set(result["Endpoint"]) == set(REGRESSION_SPEC.endpoints) | {
         MACRO_ENDPOINT_LABEL
     }
-    assert (result["Endpoint"] == MACRO_ENDPOINT_LABEL).sum() == BOOTSTRAP_SAMPLES
+    assert (result["Endpoint"] == MACRO_ENDPOINT_LABEL).sum() == TEST_BOOTSTRAP_SAMPLES
 
 
 def test_add_macro_endpoint_classification(example_classification_bootstrap_scores):
@@ -267,7 +268,7 @@ def test_add_macro_endpoint_classification(example_classification_bootstrap_scor
     assert set(result["Endpoint"]) == set(CLASSIFICATION_SPEC.endpoints) | {
         MACRO_ENDPOINT_LABEL
     }
-    assert (result["Endpoint"] == MACRO_ENDPOINT_LABEL).sum() == BOOTSTRAP_SAMPLES
+    assert (result["Endpoint"] == MACRO_ENDPOINT_LABEL).sum() == TEST_BOOTSTRAP_SAMPLES
 
 
 def test_add_macro_endpoint_drops_other_track_columns():
@@ -321,7 +322,7 @@ def test_compute_macro_bootstrap_results_matches_fixture(
     ).sort_values("Sample")
 
     assert recomputed_macro.shape == (
-        BOOTSTRAP_SAMPLES,
+        TEST_BOOTSTRAP_SAMPLES,
         len(REGRESSION_SPEC.metric_functions) + 2,
     )
     assert (recomputed_macro["Endpoint"] == MACRO_ENDPOINT_LABEL).all()

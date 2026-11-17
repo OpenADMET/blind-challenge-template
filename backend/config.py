@@ -87,7 +87,15 @@ METRIC_FUNCTIONS: dict[str, Callable] = {
 # never change it while it runs: submissions scored with different B would be
 # compared on different resample sets. The smallest attainable two-sided p-value
 # is 2 / (B + 1).
-BOOTSTRAP_SAMPLES = 1000
+#
+# 10,000 (#11, 11-18): at 1,000, a p-value near the Benjamini-Hochberg cut-offs of a
+# large leaderboard varied by up to 5x between seeds, so boundary tier decisions were
+# partly chance; 10,000 cuts that noise about 3x and lowers the p-value floor to
+# 0.0002. It costs ~70 s per classification scoring run (~35 s regression) on a
+# laptop, well inside the evaluators' 900 s, files under 1 MB, and a few seconds
+# more for the pairwise comparisons. Tests score with 1,000
+# (tests/backend/backend_test_settings.py).
+BOOTSTRAP_SAMPLES = 10000
 
 # Structure dataset
 # TODO: set to the number of compounds in this challenge's structure test set

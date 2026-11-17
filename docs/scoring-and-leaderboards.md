@@ -32,7 +32,7 @@ flowchart TD
         RMERGE --> RLOOP["For each of the 4 regression endpoints<br/>(compounds with no ground truth for that<br/>endpoint are excluded before scoring)"]
         RLOOP --> RMETRICS["REGRESSION_SPEC.metrics:<br/>ST-RAE · MAE · R2 · Spearman_R · Kendall_Tau<br/>(ST-RAE also receives that endpoint's<br/>_conf_high/_conf_low credible-interval bounds)"]
         RMETRICS --> RBOOT["Bootstrap resample, 1000 iterations<br/>(same sample indices shared across all endpoints<br/>of a given pool size)"]
-        RBOOT --> RRAW[("Raw bootstrap table<br/>4 endpoints x 1000 samples")]
+        RBOOT --> RRAW[("Raw bootstrap table<br/>4 endpoints x B samples")]
     end
 
     subgraph S1C["1b · Score a classification submission — score_classification_submission()"]
@@ -42,17 +42,17 @@ flowchart TD
         CMERGE --> CLOOP["For each of the 2 classification endpoints<br/>(compounds with no ground truth for that<br/>endpoint are excluded before scoring)"]
         CLOOP --> CMETRICS["CLASSIFICATION_SPEC.metrics:<br/>MCC · Accuracy · Precision · Recall · F1"]
         CMETRICS --> CBOOT["Bootstrap resample, 1000 iterations"]
-        CBOOT --> CRAW[("Raw bootstrap table<br/>2 endpoints x 1000 samples")]
+        CBOOT --> CRAW[("Raw bootstrap table<br/>2 endpoints x B samples")]
     end
 
     subgraph S2R["2a · Regression track — add_macro_endpoint()"]
         RRAW --> RMA["Macro-average across the 4 endpoints,<br/>per bootstrap sample -&gt; 'MA' pseudo-endpoint"]
-        RMA --> RCOMBINED[("regression bootstrap-results.parquet<br/>5 endpoints x 1000 samples = 5000 rows")]
+        RMA --> RCOMBINED[("regression bootstrap-results.parquet<br/>5 endpoints x B samples (B = 10,000: 50,000 rows)")]
     end
 
     subgraph S2C["2b · Classification track — add_macro_endpoint()"]
         CRAW --> CMA["Macro-average across the 2 endpoints,<br/>per bootstrap sample -&gt; 'MA' pseudo-endpoint"]
-        CMA --> CCOMBINED[("classification bootstrap-results.parquet<br/>3 endpoints x 1000 samples = 3000 rows")]
+        CMA --> CCOMBINED[("classification bootstrap-results.parquet<br/>3 endpoints x B samples (B = 10,000: 30,000 rows)")]
     end
 
     subgraph S3["3 · Average by endpoint, then flatten (once per track)"]
@@ -176,7 +176,8 @@ flowchart TD
   ties the other and the number where it loses or ties (ties count for both sides, the
   conservative convention), and the two-sided p-value is `2 * (r + 1) / (B + 1)`,
   capped at 1. It is never exactly 0: with
-  `BOOTSTRAP_SAMPLES = 1000` the smallest possible value is about 0.002. P-values are
+  `BOOTSTRAP_SAMPLES = 10000` the smallest possible value is about 0.0002 (why 10,000:
+  see the comment in `backend/config.py`). P-values are
   then compared against Benjamini-Hochberg-adjusted thresholds. Because the pairing is
   on the sample index, `BOOTSTRAP_SAMPLES` must not change while a challenge runs.
 - **Leaderboard generation is one function regardless of track or endpoint count.**

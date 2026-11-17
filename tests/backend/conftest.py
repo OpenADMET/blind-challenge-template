@@ -9,6 +9,18 @@ import pandas as pd
 import pytest
 from loguru import logger
 
+from backend_test_settings import TEST_BOOTSTRAP_SAMPLES
+
+
+@pytest.fixture(autouse=True)
+def fewer_bootstrap_samples(monkeypatch):
+    """Score with ``TEST_BOOTSTRAP_SAMPLES`` instead of the production B."""
+    import backend.aws_submission_processing
+    import backend.evaluate_predictions
+
+    for module in (backend.evaluate_predictions, backend.aws_submission_processing):
+        monkeypatch.setattr(module, "BOOTSTRAP_SAMPLES", TEST_BOOTSTRAP_SAMPLES)
+
 
 @pytest.fixture()
 def loguru_caplog():

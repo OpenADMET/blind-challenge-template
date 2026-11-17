@@ -55,7 +55,7 @@ flowchart TD
         MEAN --> BOOTDF[("bootstrap-results.parquet<br/>1000 rows, Endpoint='Structure' always<br/>same Sample/Endpoint schema as activity")]
     end
 
-    BOOTDF --> BYEP["average_bootstrap_results_by_endpoint()<br/>mean &amp; std over the 1000 samples<br/>(shared helper, reused from activity)"]
+    BOOTDF --> BYEP["average_bootstrap_results_by_endpoint()<br/>mean &amp; std over the B samples<br/>(shared helper, reused from activity)"]
     PERCOMPOUNDDF --> COVMEAN["coverage_mean = per-compound coverage.mean()<br/>added directly — coverage is scalar,<br/>not bootstrapped"]
     BYEP --> PIVOT["pivot_endpoint_results_wide()<br/>one wide row, prefixed 'Structure_...'<br/>(shared helper, reused from activity)"]
     COVMEAN --> PIVOT
