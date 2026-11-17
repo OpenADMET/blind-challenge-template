@@ -178,7 +178,7 @@ rather than ranking:
 - Submissions: `submissions/{track}/{user_id}/{submission_id}/{filename}` — `{track}` is `regression`, `classification`, or `structure`, each with its own independent upload
 - Manifest: `submissions/manifest/{track}/{user_id}_{submission_id}.parquet` — `{track}` is `regression`, `classification`, or `structure`, one manifest row per submission
 - Scores: `scores/all/{track}/{user_id}/{submission_id}/averaged-results.parquet`, `scores/phase_1/{track}/{user_id}/{submission_id}/averaged-results.parquet`
-- Leaderboard: `leaderboard/{live,interim,final}/{track}/{endpoint_slug}_leaderboard_latest.csv` — `{endpoint_slug}` is `MA` for the master (multi-endpoint tracks only), `Structure` for the structure track's one leaderboard, one of the regression endpoints (e.g. `ENDPOINT_1`) for `track="regression"`, or one of the classification endpoints (e.g. `ENDPOINT_5`) for `track="classification"`
+- Leaderboard: `leaderboard/{live,interim,final}/{track}/{endpoint_slug}_leaderboard_latest.csv` — `{endpoint_slug}` is `MA` for the master (multi-endpoint tracks only), `structure` for the structure track's one leaderboard, one of the regression endpoints (e.g. `ENDPOINT_1`) for `track="regression"`, or one of the classification endpoints (e.g. `ENDPOINT_5`) for `track="classification"`
 - Entries list (every track combined): `entries/all_entries_latest.csv`
 
 All S3 paths are constructed using the `TrackPaths` dataclass helpers (including `.all_entries` for the entries list — the same prefix for every track, since the list spans all of them), not by string concatenation.

@@ -19,6 +19,7 @@ from .config import (
     POSEBUSTERS_MAX_FAILURES,
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
     REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX,
+    STRUCTURE_ENDPOINTS,
     STRUCTURE_METRICS,
 )
 from .utils import bootstrap_sampling, clip_and_log_transform
@@ -871,7 +872,10 @@ def bootstrap_structure_metrics(
         bootstrap_sampling(n_compounds, n_bootstrap_samples)
     ):
         sample_means = np.mean(scores[idx], axis=0)
-        row: dict[str, object] = {"Sample": sample_idx, "Endpoint": "Structure"}
+        row: dict[str, object] = {
+            "Sample": sample_idx,
+            "Endpoint": STRUCTURE_ENDPOINTS[0],
+        }
         for col, value in zip(_BOOTSTRAP_COLS, sample_means):
             row[col] = value
         rows.append(row)

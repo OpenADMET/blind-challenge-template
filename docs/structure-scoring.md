@@ -103,14 +103,16 @@ whole submission:
   (fraction of compounds successfully matched), not a distributional quantity per
   bootstrap sample, so it's computed once and appended directly to `averaged_df`
   (`coverage_mean`) rather than flowing through the bootstrap table.
-- **`Endpoint = "Structure"` is a fixed constant**, not derived from `config.py`'s
-  endpoint list the way activity's endpoints are — it lets
-  `average_bootstrap_results_by_endpoint`/`pivot_endpoint_results_wide` (built for
-  activity's per-endpoint schema) work unchanged for structure's single endpoint. There
-  is no macro-average pseudo-endpoint for structure (see
+- **`Endpoint` is `STRUCTURE_ENDPOINTS[0]` (`"structure"`)** for every bootstrap row,
+  which lets `average_bootstrap_results_by_endpoint`/`pivot_endpoint_results_wide`
+  (built for activity's per-endpoint schema) work unchanged for structure's single
+  endpoint. There is no macro-average pseudo-endpoint for structure (see
   [scoring-and-leaderboards.md](scoring-and-leaderboards.md) — a single-endpoint track
-  never gets one), and `STRUCTURE_ENDPOINTS = ["Structure"]` is also the leaderboard's
-  one and only endpoint slug.
+  never gets one), and `STRUCTURE_ENDPOINTS[0]` is also the leaderboard's one and only
+  endpoint slug. Before v0.1.1 the label was a hard-coded `"Structure"`, which didn't
+  match the config and broke every structure leaderboard build. Leaderboard building
+  matches endpoints case-insensitively, so score files saved with the old label still
+  work.
 - **Ranked by `LDDT-PLI` descending** (`SORT_STRUCTURE_LEADERBOARD_BY = "LDDT-PLI"`,
   `metric_sort_ascending=False`) — higher is better, like classification's `MCC` but
   unlike regression's `ST-RAE` (lower is better, ascending).
