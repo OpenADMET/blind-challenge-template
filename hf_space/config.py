@@ -201,17 +201,23 @@ TRACK_SPECS: dict[str, TrackSpec] = {
 REGRESSION_NAME = "Regression Prediction"
 CLASSIFICATION_NAME = "Classification Prediction"
 STRUCTURE_NAME = "Structure Prediction"
+TRACK_NAMES: dict[str, str] = {
+    REGRESSION_TRACK: REGRESSION_NAME,
+    CLASSIFICATION_TRACK: CLASSIFICATION_NAME,
+    STRUCTURE_TRACK: STRUCTURE_NAME,
+}
 
 REQUIRED_REGRESSION_COLUMNS = IDENTIFIER_COLUMNS + REGRESSION_SPEC.endpoints
 REQUIRED_CLASSIFICATION_COLUMNS = IDENTIFIER_COLUMNS + CLASSIFICATION_SPEC.endpoints
 
-# How each metric is labelled on the leaderboards; a metric not listed is shown
-# under its own name.
+# How each metric (or extra column, without its "_mean") is labelled on the
+# leaderboards; one not listed is shown under its own name.
 METRIC_DISPLAY_NAMES: dict[str, str] = {
     "R2": "R²",
     "Spearman_R": "Spearman's ρ",
     "Kendall_Tau": "Kendall's τ",
     "F1": "F1 Score",
+    "coverage": "Coverage",
 }
 
 
@@ -235,6 +241,18 @@ def metric_display_names(spec: TrackSpec) -> dict[str, str]:
 # ---------------------------------- Track visibility ----------------------------------
 
 LeaderboardStage = Literal["live", "interim", "final"]
+
+# Significant figures for scores on each leaderboard stage. The live leaderboard shows
+# fewer, so it gives away less about the test set while the challenge is running.
+LEADERBOARD_SIG_FIGS: dict[LeaderboardStage, int] = {
+    "live": 2,
+    "interim": 3,
+    "final": 3,
+}
+# Stages whose scores are also rounded in the data the Space sends (the values the
+# table sorts by, and the CSV download), so full-precision scores never reach the
+# browser. On other stages only the text shown is rounded.
+ROUNDED_STAGES: tuple[LeaderboardStage, ...] = ("live",)
 
 
 @dataclass(frozen=True)

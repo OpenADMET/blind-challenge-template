@@ -26,12 +26,10 @@ from leaderboards import (
 from loguru import logger
 from submission import render_submission_tab
 
-# Theme and Title setup
-with gr.Blocks(
-    title=PAGE_TITLE,
-    fill_height=False,
-    theme=gr.themes.Ocean(text_size=sizes.text_lg),
-) as demo:
+# Theme and title. Gradio 6 takes the theme in launch(), not Blocks().
+THEME = gr.themes.Ocean(text_size=sizes.text_lg)
+
+with gr.Blocks(title=PAGE_TITLE, fill_height=False) as demo:
     ### Header Section
     with gr.Row():
         with gr.Column(scale=7):
@@ -42,7 +40,7 @@ with gr.Blocks(
                     Path(__file__).resolve().parent / "_static" / "challenge_logo.png"
                 ),
                 show_label=False,
-                show_download_button=False,
+                buttons=[],
                 width="400px",
             )
 
@@ -134,4 +132,4 @@ with gr.Blocks(
 
 if __name__ == "__main__":
     logger.info("Starting blind challenge Gradio app...")
-    demo.launch()
+    demo.launch(theme=THEME)

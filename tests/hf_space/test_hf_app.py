@@ -51,7 +51,7 @@ def _expected_keys(stage: str, visibility: dict[str, TrackVisibility]) -> set[st
     ]:
         if not endpoints or not visibility[track].on_leaderboard(stage):
             continue
-        multi = len(endpoints) > 1 and track != "structure"
+        multi = len(endpoints) > 1
         slugs = [MACRO_ENDPOINT_LABEL, *endpoints] if multi else endpoints
         keys |= {
             f"leaderboard/{stage}/{track}/{s}_leaderboard_latest.csv" for s in slugs

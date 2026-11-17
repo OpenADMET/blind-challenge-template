@@ -189,6 +189,26 @@ flowchart TD
   — `lambda_handler_leaderboard.py`'s `_TRACKS` dict also skips registering a
   zero-endpoint track in the first place, so this is belt-and-suspenders.
 
+## How the Space shows a leaderboard
+
+The Space reads each leaderboard CSV from S3 and shows it as a table:
+
+- **Scores** show as "mean ± std" but sort by the mean, numerically. Sorting is
+  in each column header's ⋮ menu.
+- **Precision** is set per stage in `hf_space/config.py`: `LEADERBOARD_SIG_FIGS`
+  (2 significant figures on the live leaderboard, 3 on interim and final). On
+  `ROUNDED_STAGES` (live) the sort values and the download are rounded too, so the
+  browser never receives full-precision scores while the challenge is running.
+- **Usernames** sort by the name shown, ignoring case. An anonymous entry shows
+  its alias (searchable by the alias only) and isn't linked to the user's profile.
+  Names longer than 24 characters are shortened, with the full name on hover.
+- Visitors can **search** by name, **filter** on proprietary data and open code,
+  and **show or hide columns**. Columns the Space doesn't list itself, such as
+  the significance tiers, start hidden. A live refresh keeps these choices.
+- **Download CSV** gives each score's mean and std in separate columns, so the
+  file can be sorted by either in a spreadsheet: full precision on interim and
+  final, rounded on live.
+
 ## Where this lives in the code
 
 | Diagram stage | Function | File |
@@ -199,3 +219,4 @@ flowchart TD
 | Per-track pipeline: fetch, validate, score, save, manifest | `process_new_regression_submission`, `process_new_classification_submission`, `score_regression_submission`, `score_classification_submission` | `backend/aws_submission_processing.py` |
 | 4. Narrow to one endpoint + rank | `create_track_leaderboards`, `_narrow_averaged_results_to_endpoint` | `backend/aws_leaderboards.py` |
 | Ranking, CLD significance | `FinalLeaderboard`, `EntryComparison` | `backend/leaderboard.py` |
+| Showing it in the Space | `load_leaderboard`; `LeaderboardTable`, `render_leaderboard_table` | `hf_space/leaderboards.py`; `hf_space/leaderboard_table.py` |
