@@ -34,7 +34,7 @@ def test_EntryMetric():
     assert metric.std == 0.01
 
 
-def test_LeaderboardEntry_structure(mock_averaged_results):
+def test_LeaderboardEntry_structure(example_averaged_results):
     """Check initialization and metric parsing."""
     entry = LeaderboardEntry(
         username="user1",
@@ -43,7 +43,7 @@ def test_LeaderboardEntry_structure(mock_averaged_results):
         submitted_at=pd.Timestamp("2024-01-01"),
         model_report_link="http://report.com",
         used_proprietary_data=False,
-        averaged_results=mock_averaged_results,
+        averaged_results=example_averaged_results,
     )
 
     assert entry.username == "user1"
@@ -61,7 +61,7 @@ def test_LeaderboardEntry_structure(mock_averaged_results):
     assert entry.open_source_code is False
 
 
-def test_FinalLeaderboard_includes_open_source_code(mock_bootstrap_data):
+def test_FinalLeaderboard_includes_open_source_code(example_bootstrap_data):
     """Check that open_source_code is surfaced as a leaderboard_df column."""
     averaged_results = pd.DataFrame({"accuracy_mean": [0.9], "accuracy_std": [0.01]})
     entry = LeaderboardEntry(
@@ -72,7 +72,7 @@ def test_FinalLeaderboard_includes_open_source_code(mock_bootstrap_data):
         model_report_link="",
         used_proprietary_data=False,
         averaged_results=averaged_results,
-        bootstrap_data=mock_bootstrap_data,
+        bootstrap_data=example_bootstrap_data,
         open_source_code=True,
     )
     leaderboard = FinalLeaderboard(entries=[entry], primary_metric="accuracy")
@@ -80,7 +80,7 @@ def test_FinalLeaderboard_includes_open_source_code(mock_bootstrap_data):
 
 
 def test_LeaderboardEntry_with_bootstrap_data(
-    mock_averaged_results, mock_bootstrap_data
+    example_averaged_results, example_bootstrap_data
 ):
     """Check that bootstrap data is stored correctly."""
     entry = LeaderboardEntry(
@@ -90,28 +90,28 @@ def test_LeaderboardEntry_with_bootstrap_data(
         submitted_at=pd.Timestamp("2024-01-01"),
         model_report_link="n/a",
         used_proprietary_data=True,
-        averaged_results=mock_averaged_results,
-        bootstrap_data=mock_bootstrap_data,
+        averaged_results=example_averaged_results,
+        bootstrap_data=example_bootstrap_data,
     )
     assert entry.bootstrap_data is not None
     assert len(entry.bootstrap_data) == 100
     assert "accuracy" in entry.bootstrap_data.columns
 
 
-def test_EntryComparison(mock_averaged_results):
+def test_EntryComparison(example_averaged_results):
     """Verify statistical calculations and significance logic."""
     # Create two entries where Entry A is consistently better than Entry B
     boot_a = pd.DataFrame({"Sample": range(10), "accuracy": [0.95] * 10})
     boot_b = pd.DataFrame({"Sample": range(10), "accuracy": [0.80] * 10})
 
     entry_a = LeaderboardEntry(
-        "a", False, "a", pd.Timestamp.now(), "", False, mock_averaged_results, boot_a
+        "a", False, "a", pd.Timestamp.now(), "", False, example_averaged_results, boot_a
     )
     entry_b = LeaderboardEntry(
-        "b", False, "b", pd.Timestamp.now(), "", False, mock_averaged_results, boot_b
+        "b", False, "b", pd.Timestamp.now(), "", False, example_averaged_results, boot_b
     )
 
-    # abs_mean_diff calculation based on mock_averaged_results (0.90 - 0.90 = 0.0)
+    # abs_mean_diff calculation based on example_averaged_results (0.90 - 0.90 = 0.0)
     # Note: In real use, averaged_results would match bootstrap means
     comparison = EntryComparison(entry_a, entry_b, "accuracy", abs_mean_diff=0.0)
 
@@ -144,7 +144,7 @@ def test_EntryComparison_tie():
     assert comparison.p_value == 1.0
 
 
-def test_FinalLeaderboard(mock_bootstrap_data):
+def test_FinalLeaderboard(example_bootstrap_data):
     """Check sorting, ranking, and CLD generation integration."""
     # Entry 1: Mean 0.9
     entry1 = LeaderboardEntry(
@@ -155,7 +155,7 @@ def test_FinalLeaderboard(mock_bootstrap_data):
         "",
         False,
         pd.DataFrame({"accuracy_mean": [0.9], "accuracy_std": [0.01]}),
-        mock_bootstrap_data,
+        example_bootstrap_data,
     )
 
     # Entry 2: Mean 0.95 (Better)
@@ -167,7 +167,7 @@ def test_FinalLeaderboard(mock_bootstrap_data):
         "",
         False,
         pd.DataFrame({"accuracy_mean": [0.95], "accuracy_std": [0.01]}),
-        mock_bootstrap_data,
+        example_bootstrap_data,
     )
 
     # Test sorting (descending: higher accuracy is better)
@@ -187,7 +187,7 @@ def test_FinalLeaderboard(mock_bootstrap_data):
     assert isinstance(lb.leaderboard_df.iloc[0]["Significance (CLD)"], str)
 
 
-def test_FinalLeaderboard_includes_additional_columns(mock_bootstrap_data):
+def test_FinalLeaderboard_includes_additional_columns(example_bootstrap_data):
     """Check that requested extra averaged-results columns are included."""
     averaged_results = pd.DataFrame(
         {
@@ -204,7 +204,7 @@ def test_FinalLeaderboard_includes_additional_columns(mock_bootstrap_data):
         model_report_link="",
         used_proprietary_data=False,
         averaged_results=averaged_results,
-        bootstrap_data=mock_bootstrap_data,
+        bootstrap_data=example_bootstrap_data,
     )
 
     leaderboard = FinalLeaderboard(
@@ -217,7 +217,7 @@ def test_FinalLeaderboard_includes_additional_columns(mock_bootstrap_data):
     assert leaderboard.leaderboard_df.iloc[0]["coverage_mean"] == pytest.approx(0.87)
 
 
-def test_FinalLeaderboard_missing_additional_column_is_nan(mock_bootstrap_data):
+def test_FinalLeaderboard_missing_additional_column_is_nan(example_bootstrap_data):
     """An entry missing an extra column gets NaN for it; the other entries and the
     rest of the leaderboard are unaffected (#26)."""
 
@@ -230,7 +230,7 @@ def test_FinalLeaderboard_missing_additional_column_is_nan(mock_bootstrap_data):
             model_report_link="",
             used_proprietary_data=False,
             averaged_results=averaged_results,
-            bootstrap_data=mock_bootstrap_data,
+            bootstrap_data=example_bootstrap_data,
         )
 
     new_entry = _entry(
