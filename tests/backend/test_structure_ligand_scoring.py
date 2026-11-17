@@ -1,8 +1,8 @@
 """Real OpenStructure scoring of synthetic complexes: one model ligand only.
 
-Skipped when OpenStructure, its compound library or PoseBusters isn't installed.
-The scoring Lambda image has all three; ``environment.yml`` (used by CI) doesn't
-include PoseBusters yet, and ``score_single_structure`` needs it after OST scoring.
+Skipped when OpenStructure, its compound library or PoseBusters isn't installed
+(``score_single_structure`` needs PoseBusters after OST scoring). The scoring Lambda
+image and ``environment.yml`` both include all three.
 """
 
 import math
