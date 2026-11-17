@@ -83,3 +83,33 @@ def fake_s3(monkeypatch):
 def utc_now():
     """The current time, timezone-aware in UTC."""
     return datetime.now(timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def fake_local_hf_login(monkeypatch):
+    """Let pages with a Hugging Face login button build without an HF token.
+
+    Outside a Space, Gradio fakes the login with the machine's own HF account and
+    fails if there's no token, as on CI. The tests never log in through it.
+    """
+    import gradio.oauth
+
+    monkeypatch.setattr(
+        gradio.oauth,
+        "_get_mocked_oauth_info",
+        lambda: {
+            "access_token": "test-token",
+            "token_type": "bearer",
+            "expires_in": 3600,
+            "id_token": "test",
+            "scope": "openid profile",
+            "expires_at": 0,
+            "userinfo": {
+                "sub": "test-sub",
+                "name": "Test User",
+                "preferred_username": "test-user",
+                "profile": "https://huggingface.co/test-user",
+                "picture": "",
+            },
+        },
+    )

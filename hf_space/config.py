@@ -19,8 +19,14 @@ from typing import Literal
 # 2: Phase 2 (live leaderboard + static interim leaderboard)
 # 3: Challenge closed, final leaderboard not yet released
 # 4: Challenge closed, final leaderboard released
-CURRENT_PHASE = 4
+CURRENT_PHASE = 0
 HOURS_BETWEEN_SUBMISSIONS = 12
+# Only Hugging Face accounts at least this old can submit, which makes throwaway
+# accounts for dodging the cooldown less useful. 0 turns the check off.
+MIN_ACCOUNT_AGE_DAYS = 1
+_MIN_ACCOUNT_AGE = (
+    f"{MIN_ACCOUNT_AGE_DAYS} day{'s' if MIN_ACCOUNT_AGE_DAYS != 1 else ''}"
+)
 # Minimum standard deviation for regression predictions to be considered valid.
 # Constant columns (with or without slight noise added) can be used to game the
 # leaderboard metric.
@@ -473,12 +479,12 @@ Go to the **Leaderboard** to see current standings. To participate, head to the 
 # TODO: fill in. Rendered inside ABOUT_MD while CURRENT_PHASE is 1 or 2.
 HOW_TO_PARTICIPATE_MD = f"""### ✅ How to Participate
 
-1. **Register:** Create an account with Hugging Face.
+1. **Register:** Create a personal Hugging Face account{f" (it can submit once it's {_MIN_ACCOUNT_AGE} old)" if MIN_ACCOUNT_AGE_DAYS else ""}.
 2. **Get the Data:** Download the training and test sets from the [challenge dataset page]({DATASET_DOWNLOAD_LINK}).
 3. **Walk through the Tutorial:** Check out the baseline notebooks and validation scripts in the [challenge tutorial repository]({TUTORIAL_LINK}).
 4. **Disclosures:** Indicate whether your submission contributes open-source code and disclose any use of **proprietary training data**.
 5. **Join the Community:** Get support, ask questions, and collaborate in the `#<your-challenge>` channel on our [Discord]({DISCORD_LINK}).
-6. **Submit:** Upload your predictions via the **Submit** tab.
+6. **Submit:** Log in with Hugging Face on the **Submit** tab and upload your predictions.
 
 ---"""
 
@@ -569,13 +575,16 @@ test set partially revealed? See docs/phases-and-stages.md.>
 Yes! Each track is an independent submission (its own file), scored independently and ranked on its own leaderboard. A strong entry in one track is ranked regardless of whether you submit to the others.
 
 **I want to participate with colleagues. Should we submit together or separately?**
-Please submit under a single Hugging Face account representing your lab or team. Multiple submissions from the same team or lab (i.e., individuals who cooperate intensively to prepare entries) are not permitted.
+Please submit from one team member's personal Hugging Face account, using your team or lab name as the alias. (Organisation accounts can't log in.) Multiple submissions from the same team or lab (i.e., individuals who cooperate intensively to prepare entries) are not permitted.
 
 **Are there limits on submission frequency?**
-Yes, submissions are rate-limited to at most once every {HOURS_BETWEEN_SUBMISSIONS} hours per track. Only your latest valid submission counts toward the live leaderboard standings. Please run the validation script before uploading!
+Yes, submissions are rate-limited to at most once every {HOURS_BETWEEN_SUBMISSIONS} hours per track, per Hugging Face account. Only your latest valid submission counts toward the live leaderboard standings. Please run the validation script before uploading! Using more than one account to get around the limit breaks the rules and can get your accounts banned.
+
+**Can I submit through the API or a script?**
+No. Submissions are made on the **Submit** tab while logged in with Hugging Face, so every entry belongs to a real account.{f" New accounts can submit once they're {_MIN_ACCOUNT_AGE} old." if MIN_ACCOUNT_AGE_DAYS else ""}
 
 **Where do I ask technical questions?**
-For technical questions regarding dataset schema, infrastructure, or submission mechanics, use the `#<your-challenge>` [channel on the Discord](<Discord invite URL>).
+For technical questions regarding dataset schema, infrastructure, or submission mechanics, use the `#<your-challenge>` [channel on the Discord]({DISCORD_LINK}).
 
 ---
 

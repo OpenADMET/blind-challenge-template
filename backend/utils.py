@@ -1,7 +1,6 @@
 """Utility functions for the blind challenge."""
 
 import ipaddress
-import re
 import socket
 import time
 from functools import lru_cache
@@ -195,24 +194,6 @@ def check_page_exists(
     finally:
         # Sleep after every request to avoid HTTPS error
         time.sleep(delay)
-
-
-def validate_hf_username(username: str) -> bool:
-    """Validate that the Hugging Face username exists by checking the profile page."""
-    # restrict_to_public=False: the target here is always the literal huggingface.co
-    # domain (hardcoded below, or enforced by the regex above), never an
-    # attacker-supplied host, so the SSRF guard in check_page_exists is not needed —
-    # and huggingface.co can legitimately resolve to an internal address when called
-    # from within HF's own infrastructure (split-horizon DNS), which that guard
-    # would otherwise reject.
-    logger.debug("Validating Hugging Face username: {}", username)
-    if re.match(r"^https?://huggingface\.co/([^/]+)/?$", str(username).strip()):
-        return check_page_exists(
-            str(username).strip(), delay=1, max_retries=10, restrict_to_public=False
-        )
-    username = str(username).strip()
-    hf_url = f"https://huggingface.co/{username}"
-    return check_page_exists(hf_url, delay=1, max_retries=10, restrict_to_public=False)
 
 
 def validate_model_details(tag: str | float | None) -> str:

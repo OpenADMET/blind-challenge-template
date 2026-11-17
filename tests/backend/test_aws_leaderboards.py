@@ -180,11 +180,12 @@ def test_create_track_leaderboards_ranks_by_the_track_spec(
 
 @pytest.mark.parametrize(
     ("require_report", "kept"),
-    [(True, ["good"]), (False, ["good", "no_report"])],
+    [(True, ["good", "ghost"]), (False, ["good", "no_report", "ghost"])],
 )
 def test_final_stage_model_report_requirement(monkeypatch, require_report, kept):
     """REQUIRE_MODEL_REPORT decides whether entries without a reachable model
-    report are dropped from the final leaderboard. Unknown usernames always are."""
+    report are dropped from the final leaderboard. Usernames aren't re-checked:
+    they come from the Space's Hugging Face login."""
     import backend.aws_leaderboards as al
 
     manifest = pd.DataFrame(
@@ -195,7 +196,6 @@ def test_final_stage_model_report_requirement(monkeypatch, require_report, kept)
         }
     )
     monkeypatch.setattr(al, "create_manifest", lambda **kwargs: manifest.copy())
-    monkeypatch.setattr(al, "validate_hf_username", lambda name: name != "ghost")
     monkeypatch.setattr(
         al,
         "validate_model_details",

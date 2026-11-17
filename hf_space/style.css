@@ -52,6 +52,45 @@
     color: #fde68a;
 }
 
+/* --- Submit tab --- */
+.login-card {
+    padding: 14px 16px;
+    gap: 12px;
+    border: 1px solid var(--border-color-primary);
+    border-radius: var(--radius-lg);
+    background: var(--block-background-fill);
+}
+
+.login-note,
+.login-note p {
+    margin: 0;
+    color: var(--body-text-color-subdued);
+    text-align: center;
+}
+
+.login-button-row {
+    justify-content: center;
+}
+
+/* Steps 3 and 4 side by side: their field boxes stretch to the same height. */
+.entry-row > .column > .form {
+    flex-grow: 1;
+}
+
+.entry-row > .column > .block:first-child {
+    flex-grow: 0;
+}
+
+/* Track options stacked, full width, so the box lines up with the file drop. */
+.track-select .wrap {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.track-select .wrap label {
+    width: 100%;
+}
+
 /* --- Markdown tables (About tab) --- */
 #welcome-md table {
     width: 100%;
@@ -84,9 +123,11 @@
     gap: 12px;
 }
 
-/* The Download CSV button sits beside the endpoint picker, at the same height. */
+/* The endpoint picker fills the row, with the Download CSV button at its right at
+   the same height; on a single-endpoint track the button sits alone at the right. */
 .track-controls {
     align-items: stretch;
+    justify-content: flex-end;
 }
 
 .track-controls .download-button {

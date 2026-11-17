@@ -22,7 +22,7 @@ from .config import (
     scores_uri_column,
 )
 from .leaderboard import FinalLeaderboard, LeaderboardEntry
-from .utils import validate_hf_username, validate_model_details
+from .utils import validate_model_details
 
 _TRACK_PATHS = {
     "regression": REGRESSION_PATHS,
@@ -290,7 +290,8 @@ def _fetch_leaderboard_manifest_and_scores(
     stage : str
         "live", "interim", or "final" — see ``create_track_leaderboards``.
     remove_invalid : bool
-        Whether to remove invalid submissions from the manifest.
+        Whether to drop submissions without a reachable model report (only when
+        ``REQUIRE_MODEL_REPORT`` is on).
     with_bootstrap : bool
         Whether to also fetch bootstrap score files (needed only for pairwise
         significance comparisons).
@@ -316,19 +317,17 @@ def _fetch_leaderboard_manifest_and_scores(
     if manifest.empty:
         return manifest, {}, {}
 
-    if remove_invalid:
-        logger.info("Removing invalid submissions from leaderboard")
-        manifest["valid_hf_username"] = manifest.username.apply(validate_hf_username)
+    # Usernames aren't re-checked: since #23 they come from the Space's Hugging Face
+    # login, not from a form field.
+    if remove_invalid and REQUIRE_MODEL_REPORT:
+        logger.info("Removing submissions without a reachable model report")
         start_len = len(manifest)
-        valid_mask = manifest["valid_hf_username"]
-        if REQUIRE_MODEL_REPORT:
-            manifest["valid_model_details"] = manifest.model_report_link.apply(
-                validate_model_details
-            )
-            valid_mask = valid_mask & ~manifest["valid_model_details"].isin(
-                ["Not submitted", "Invalid link"]
-            )
-        manifest = manifest[valid_mask]
+        manifest["valid_model_details"] = manifest.model_report_link.apply(
+            validate_model_details
+        )
+        manifest = manifest[
+            ~manifest["valid_model_details"].isin(["Not submitted", "Invalid link"])
+        ]
         logger.info(
             "Removed {} invalid submissions, {} remaining",
             start_len - len(manifest),

@@ -141,4 +141,8 @@ with gr.Blocks(title=PAGE_TITLE, fill_height=False) as demo:
 
 if __name__ == "__main__":
     logger.info("Starting blind challenge Gradio app...")
-    demo.launch(theme=build_theme(), css_paths=[CSS])
+    # No "Use via API" link: submissions need a Hugging Face login, which API calls
+    # don't carry, so they're refused anyway.
+    demo.launch(
+        theme=build_theme(), css_paths=[CSS], footer_links=["gradio", "settings"]
+    )

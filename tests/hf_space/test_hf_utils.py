@@ -2,6 +2,8 @@
 
 import socket
 
+from datetime import datetime, timezone
+
 import pytest
 import requests
 import utils
@@ -171,28 +173,86 @@ def test_check_page_exists_network_error(monkeypatch, public_dns, no_sleep):
     assert utils.check_page_exists("https://example.org/r") is False
 
 
-# --- validate_hf_username / validate_model_details ------------------------------
+# --- fetch_hf_account ----------------------------------------------------------
+
+
+class _JsonResponse:
+    def __init__(self, data, status=200):
+        self._data = data
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise utils.requests.HTTPError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._data
+
+
+@pytest.fixture
+def overview(monkeypatch):
+    """Answer the HF user overview API from a dict, recording the URLs asked for."""
+    answers: dict[str, _JsonResponse] = {}
+    urls: list[str] = []
+
+    def _get(url, timeout):
+        urls.append(url)
+        return answers[url]
+
+    monkeypatch.setattr(utils.requests, "get", _get)
+    monkeypatch.setattr(utils, "_account_cache", {})
+    return answers, urls
+
+
+def _url(username):
+    return utils.HF_USER_OVERVIEW_URL.format(username=username)
+
+
+def test_fetch_hf_account_reads_id_and_creation_date(overview):
+    answers, _ = overview
+    answers[_url("alice")] = _JsonResponse(
+        {"_id": "abc123", "createdAt": "2024-05-01T12:00:00.000Z"}
+    )
+    account = utils.fetch_hf_account("alice")
+    assert account.id == "abc123"
+    assert account.created_at == datetime(2024, 5, 1, 12, tzinfo=timezone.utc)
+
+
+def test_fetch_hf_account_is_cached(overview):
+    answers, urls = overview
+    answers[_url("alice")] = _JsonResponse(
+        {"_id": "abc123", "createdAt": "2024-05-01T12:00:00Z"}
+    )
+    utils.fetch_hf_account("alice")
+    utils.fetch_hf_account("alice")
+    assert urls == [_url("alice")]
+
+
+def test_fetch_hf_account_escapes_the_username(overview):
+    answers, urls = overview
+    answers[_url("a%2Fb")] = _JsonResponse(
+        {"_id": "x", "createdAt": "2024-05-01T12:00:00Z"}
+    )
+    utils.fetch_hf_account("a/b")
+    assert urls == [_url("a%2Fb")]
 
 
 @pytest.mark.parametrize(
-    ("username", "url"),
+    "response",
     [
-        ("alice", "https://huggingface.co/alice"),
-        (" alice ", "https://huggingface.co/alice"),
-        ("https://huggingface.co/alice", "https://huggingface.co/alice"),
+        _JsonResponse({}, status=404),
+        _JsonResponse({"createdAt": "2024-05-01T12:00:00Z"}),
+        _JsonResponse({"_id": "x", "createdAt": "not a date"}),
     ],
 )
-def test_validate_hf_username_checks_profile_page(monkeypatch, username, url):
-    calls = []
+def test_fetch_hf_account_failures_raise(overview, response):
+    answers, _ = overview
+    answers[_url("alice")] = response
+    with pytest.raises(Exception):  # noqa: B017
+        utils.fetch_hf_account("alice")
 
-    def _check(u, **kwargs):
-        calls.append((u, kwargs["restrict_to_public"]))
-        return True
 
-    monkeypatch.setattr(utils, "check_page_exists", _check)
-    assert utils.validate_hf_username(username) is True
-    # huggingface.co is a fixed, trusted host, so the SSRF guard is off for it.
-    assert calls == [(url, False)]
+# --- validate_model_details ----------------------------------------------------------
 
 
 @pytest.mark.parametrize(

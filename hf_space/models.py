@@ -45,7 +45,13 @@ class Submission(BaseModel):
     submitted_at : datetime
         UTC timestamp of submission.
     username : str
-        HuggingFace username (required, used for deduplication).
+        HuggingFace username, from the logged-in OAuth profile (used for
+        deduplication).
+    hf_user_id : str
+        The account's permanent Hugging Face ID (the OAuth ``sub``), which stays the
+        same if the account is renamed.
+    hf_account_created_at : datetime | None
+        When the Hugging Face account was created, for the organisers' audits.
     safe_username : str
         Sanitised username for use in S3 keys and file paths.
     user_alias : str
@@ -61,7 +67,7 @@ class Submission(BaseModel):
     affiliation : str
         Institutional affiliation — stored privately.
     model_report_link : str
-        URL to method report (required before deadline).
+        URL to model report (required before deadline).
     used_proprietary_data : bool
         Whether proprietary data was used in training.
     open_source_code : bool
@@ -84,6 +90,8 @@ class Submission(BaseModel):
 
     # --- public identity ---
     username: str
+    hf_user_id: str = ""
+    hf_account_created_at: datetime | None = None
     safe_username: str = ""
     user_alias: str = ""
     anonymous: bool = True

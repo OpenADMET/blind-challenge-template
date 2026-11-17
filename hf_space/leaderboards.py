@@ -710,8 +710,8 @@ def _add_track(
                 choices=[(_endpoint_label(s), s) for s in slugs],
                 value=first,
                 label="Endpoint",
-                scale=0,
-                min_width=280,
+                scale=1,
+                min_width=240,
             )
             if len(slugs) > 1
             else None

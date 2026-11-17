@@ -1,8 +1,9 @@
 """Tests for the HF Space submission form: validation, cooldown and upload."""
 
 import zipfile
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
+import gradio as gr
 import numpy as np
 import pandas as pd
 import pytest
@@ -17,6 +18,22 @@ from config import (
 )
 from models import Submission
 from submission import MAX_ALIAS_LENGTH, alias_error, model_report_link_error
+from utils import HFAccount
+
+OLD_ACCOUNT = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+
+def _profile(username: str = "alice", sub: str | None = None) -> gr.OAuthProfile:
+    """A logged-in Hugging Face profile, as Gradio passes it from the session."""
+    return gr.OAuthProfile(
+        {
+            "sub": sub if sub is not None else f"sub-{username}",
+            "name": username,
+            "preferred_username": username,
+            "profile": f"https://huggingface.co/{username}",
+            "picture": "",
+        }
+    )
 
 
 @pytest.mark.parametrize(
@@ -76,7 +93,6 @@ def test_model_report_link_error_rejects_unsafe_links(link):
 
 def _submit(**overrides):
     args = dict(
-        username="alice",
         user_alias="",
         anon_checkbox=False,
         participant_name="Alice",
@@ -88,15 +104,15 @@ def _submit(**overrides):
         open_code_checkbox=False,
         track_select="Regression Prediction",
         file_input=None,
+        profile=_profile(),
     )
     args.update(overrides)
     return submission.submit_predictions(**args)
 
 
-def test_submit_rejects_bad_alias_with_reason_before_upload(monkeypatch):
+def test_submit_rejects_bad_alias_with_reason_before_upload(monkeypatch, known_user):
     """The participant sees why their alias was refused, and nothing is uploaded,
     so the submission cooldown isn't used up."""
-    monkeypatch.setattr(submission, "validate_hf_username", lambda name: True)
     monkeypatch.setattr(
         submission,
         "upload_submission",
@@ -107,10 +123,9 @@ def test_submit_rejects_bad_alias_with_reason_before_upload(monkeypatch):
     assert result["value"] == alias_error("<b>me</b>")
 
 
-def test_submit_rejects_unsafe_model_report_link(monkeypatch):
-    monkeypatch.setattr(submission, "validate_hf_username", lambda name: True)
+def test_submit_rejects_unsafe_model_report_link(known_user):
     result = _submit(model_tag='https://example.org/" onmouseover="x')
-    assert "Method Report Link" in result["value"]
+    assert "Model Report Link" in result["value"]
 
 
 # --- Test data -----------------------------------------------------------------
@@ -157,8 +172,14 @@ def _structure_zip(path, n_files: int = STRUCTURE_DATASET_SIZE) -> str:
 
 @pytest.fixture
 def known_user(monkeypatch):
-    """Every Hugging Face username "exists", without a network call."""
-    monkeypatch.setattr(submission, "validate_hf_username", lambda name: True)
+    """Every account is long-established, with the ID its login gives, and the app
+    runs locally, without a network call."""
+    monkeypatch.setattr(
+        submission,
+        "fetch_hf_account",
+        lambda name: HFAccount(id=f"sub-{name}", created_at=OLD_ACCOUNT),
+    )
+    monkeypatch.setattr(submission, "_on_space", lambda: False)
 
 
 @pytest.fixture
@@ -265,12 +286,13 @@ def test_format_submission_time_message_never_negative(utc_now):
 # --- _fetch_last_submission_date -----------------------------------------------
 
 
-def test_fetch_last_submission_date_without_bucket_is_none(monkeypatch):
+def test_fetch_last_submission_date_without_bucket_raises(monkeypatch):
     monkeypatch.setattr(submission, "S3_BUCKET", "")
     monkeypatch.setattr(
         submission.boto3, "client", lambda *a, **k: pytest.fail("no S3 call expected")
     )
-    assert submission._fetch_last_submission_date("regression", "alice") is None
+    with pytest.raises(RuntimeError, match="S3_BUCKET"):
+        submission._fetch_last_submission_date("regression", "alice")
 
 
 def test_fetch_last_submission_date_no_submissions(fake_s3):
@@ -290,11 +312,29 @@ def test_fetch_last_submission_date_latest_metadata_only(fake_s3, utc_now):
     assert submission._fetch_last_submission_date("regression", "alice") == new
 
 
-def test_fetch_last_submission_date_s3_error_is_none(fake_s3):
-    # Current behaviour: an S3 failure looks like "no previous submission", so the
-    # cooldown is skipped (fails open). #7 tracks making this an explicit choice.
+def test_fetch_last_submission_date_s3_error_raises(fake_s3):
     fake_s3.fail_with = RuntimeError("S3 down")
-    assert submission._fetch_last_submission_date("regression", "alice") is None
+    with pytest.raises(RuntimeError, match="S3 down"):
+        submission._fetch_last_submission_date("regression", "alice")
+
+
+# --- _cooldown_error -------------------------------------------------------------
+
+
+def test_cooldown_error_fails_closed(monkeypatch):
+    """If the last submission can't be checked, the submission is refused."""
+
+    def _broken(*args):
+        raise RuntimeError("S3 down")
+
+    monkeypatch.setattr(submission, "_fetch_last_submission_date", _broken)
+    message = submission._cooldown_error("regression", "alice")
+    assert message is not None
+    assert "couldn't check when you last submitted" in message
+
+
+def test_cooldown_error_none_without_previous_submission(no_cooldown):
+    assert submission._cooldown_error("regression", "alice") is None
 
 
 # --- upload_submission --------------------------------------------------------
@@ -304,13 +344,13 @@ def _sub(track: str = "Regression Prediction", filename: str = "p.csv") -> Submi
     return Submission(username="Alice", track=track, filename=filename)
 
 
-def test_upload_submission_without_bucket_does_nothing(monkeypatch, tmp_path):
+def test_upload_submission_without_bucket_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(submission, "S3_BUCKET", "")
     monkeypatch.setattr(
         submission.boto3, "client", lambda *a, **k: pytest.fail("no S3 call expected")
     )
-    sub = _sub()
-    assert submission.upload_submission(sub, tmp_path / "p.csv") is sub
+    with pytest.raises(submission.UploadError, match="S3_BUCKET"):
+        submission.upload_submission(_sub(), tmp_path / "p.csv")
 
 
 @pytest.mark.parametrize(
@@ -336,34 +376,76 @@ def test_upload_submission_keys(fake_s3, tmp_path, track, filename, canonical):
     assert stored.s3_key == file_key
 
 
-def test_upload_submission_s3_error_is_swallowed(fake_s3, tmp_path):
-    # Current behaviour: the error is logged, not raised, and submit_predictions
-    # still reports success. #7 tracks surfacing this to the participant.
+def test_upload_submission_s3_error_raises(fake_s3, tmp_path):
     fake_s3.fail_with = RuntimeError("S3 down")
-    uploaded = submission.upload_submission(_sub(), tmp_path / "p.csv")
-    assert uploaded.s3_key is not None
+    with pytest.raises(submission.UploadError, match="S3 down"):
+        submission.upload_submission(_sub(), tmp_path / "p.csv")
 
 
 # --- submit_predictions: identity and form fields -------------------------------
 
 
-@pytest.mark.parametrize("username", ["", "   "])
-def test_submit_requires_username(username, no_upload):
-    result = _submit(username=username)
-    assert result["value"] == "Error: Hugging Face username is required."
+def test_submit_requires_login(no_upload):
+    result = _submit(profile=None)
+    assert result["value"] == (
+        "Error: Please log in with Hugging Face (step 1) to submit."
+    )
 
 
-def test_submit_rejects_unknown_username(monkeypatch, no_upload):
-    monkeypatch.setattr(submission, "validate_hf_username", lambda name: False)
-    result = _submit(username=" ghost ")
-    assert "'ghost' could not be found" in result["value"]
+def test_submit_fails_closed_when_the_account_check_fails(monkeypatch, no_upload):
+    def _unreachable(name):
+        raise ConnectionError("HF down")
+
+    monkeypatch.setattr(submission, "fetch_hf_account", _unreachable)
+    result = _submit()
+    assert "couldn't check your Hugging Face account" in result["value"]
+
+
+def test_submit_blocks_new_accounts(monkeypatch, known_user, no_upload):
+    created = datetime.now(timezone.utc) - timedelta(hours=3)
+    monkeypatch.setattr(
+        submission,
+        "fetch_hf_account",
+        lambda name: HFAccount(id="sub-alice", created_at=created),
+    )
+    result = _submit()
+    assert result["value"].startswith("Error: New Hugging Face accounts can submit")
+    allowed_from = created + timedelta(days=submission.MIN_ACCOUNT_AGE_DAYS)
+    assert f"{allowed_from:%Y-%m-%d %H:%M} UTC" in result["value"]
+
+
+def test_account_age_check_can_be_turned_off(monkeypatch, known_user):
+    monkeypatch.setattr(submission, "MIN_ACCOUNT_AGE_DAYS", 0)
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(
+        submission,
+        "fetch_hf_account",
+        lambda name: HFAccount(id="sub-alice", created_at=now),
+    )
+    error, account = submission.account_error(_profile(), now=now)
+    assert error is None
+    assert account is not None
+
+
+def test_submit_on_a_space_checks_the_account_id(monkeypatch, known_user, no_upload):
+    """The overview's ID must match the login's, so a username lookup can't be
+    confused with a different account."""
+    monkeypatch.setattr(submission, "_on_space", lambda: True)
+    result = _submit(profile=_profile("alice", sub="someone-else"))
+    assert "couldn't confirm your Hugging Face account" in result["value"]
+
+
+def test_account_id_isnt_compared_locally(known_user):
+    """Locally, Gradio fakes the login with a placeholder ID."""
+    error, _ = submission.account_error(_profile("alice", sub="11111111"))
+    assert error is None
 
 
 def test_submit_blocks_banned_username_case_insensitively(
     monkeypatch, known_user, no_upload
 ):
     monkeypatch.setitem(submission.BANNED_USERNAMES, "mallory", "Multiple accounts")
-    result = _submit(username="Mallory")
+    result = _submit(profile=_profile("Mallory"))
     assert "has been blocked" in result["value"]
     assert "Multiple accounts" in result["value"]
 
@@ -383,7 +465,7 @@ def test_submit_open_code_needs_reachable_report(monkeypatch, known_user, no_upl
         submission, "validate_model_details", lambda tag: "Invalid link"
     )
     result = _submit(open_code_checkbox=True, model_tag="https://example.org/gone")
-    assert result["value"].startswith("Error: Could not open the Method Report Link")
+    assert result["value"].startswith("Error: Could not open the Model Report Link")
 
 
 def test_submit_requires_track(known_user, no_upload):
@@ -506,7 +588,7 @@ def test_submit_cooldown_blocks_recent_submitter(
 
     monkeypatch.setattr(submission, "_fetch_last_submission_date", _last)
     result = _submit(
-        username="Org/Alice",
+        profile=_profile("Org/Alice"),
         track_select=track,
         file_input=_valid_file(track, tmp_path),
     )
@@ -523,7 +605,6 @@ def test_submit_success_after_cooldown(
     monkeypatch.setattr(submission, "_fetch_last_submission_date", lambda *a: last)
     path = _valid_file(track, tmp_path)
     result = _submit(
-        username=" alice ",
         user_alias=" Wizard ",
         anon_checkbox=True,
         email=" a@example.org ",
@@ -545,6 +626,9 @@ def test_submit_success_after_cooldown(
         "a@example.org",
     )
     assert sub.anonymous is True
+    # The account's permanent ID and age are stored for the organisers' audits.
+    assert sub.hf_user_id == "sub-alice"
+    assert sub.hf_account_created_at == OLD_ACCOUNT
     assert sub.track == track
     assert sub.model_report_link == "Not submitted"
     assert str(file_path) == path
@@ -564,3 +648,22 @@ def test_submit_without_open_code_keeps_report_link_unchecked(
     )
     [(sub, _)] = uploads
     assert sub.model_report_link == "https://example.org/report"
+
+
+def test_submit_reports_a_failed_upload(monkeypatch, tmp_path, known_user, no_cooldown):
+    def _fail(sub, file_path):
+        raise submission.UploadError("S3 down")
+
+    monkeypatch.setattr(submission, "upload_submission", _fail)
+    result = _submit(file_input=_valid_file("Regression Prediction", tmp_path))
+    assert result["value"].startswith("Error: Your submission couldn't be saved")
+    assert "doesn't count towards your cooldown" in result["value"]
+
+
+def test_submit_cooldown_fails_closed(monkeypatch, tmp_path, known_user, no_upload):
+    def _broken(*args):
+        raise RuntimeError("S3 down")
+
+    monkeypatch.setattr(submission, "_fetch_last_submission_date", _broken)
+    result = _submit(file_input=_valid_file("Regression Prediction", tmp_path))
+    assert "couldn't check when you last submitted" in result["value"]
