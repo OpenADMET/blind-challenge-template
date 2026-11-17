@@ -32,7 +32,7 @@ blinded until the very end of the challenge. It is **not** part of this scoring 
 the codebase reads the `"phase" == 2` tag directly — it's a data-side marker only.
 
 `TrackPaths.phase_2_entries` (`backend/config.py`) — an S3 prefix property
-(`submissions/manifest/phase_2_entries/{track}`) — is defined but **not currently
+(`manifests/phase_2_entries/{track}`) — is defined but **not currently
 referenced anywhere else in the codebase**. It isn't wired into any Lambda or script
 today.
 

@@ -159,11 +159,11 @@ class TrackPaths:
 
     @property
     def manifest(self) -> str:
-        return f"submissions/manifest/{self.track}"
+        return f"manifests/{self.track}"
 
     @property
     def phase_2_entries(self) -> str:
-        return f"submissions/manifest/phase_2_entries/{self.track}"
+        return f"manifests/phase_2_entries/{self.track}"
 
     @property
     def scores_all(self) -> str:

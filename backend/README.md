@@ -178,7 +178,7 @@ rather than ranking:
 ### Example S3 Key Structure
 
 - Submissions: `submissions/{track}/{user_id}/{submission_id}/{filename}` — `{track}` is `regression`, `classification`, or `structure`, each with its own independent upload
-- Manifest: `submissions/manifest/{track}/{user_id}_{submission_id}.parquet` — `{track}` is `regression`, `classification`, or `structure`, one manifest row per submission
+- Manifest: `manifests/{track}/{user_id}_{submission_id}.parquet` — `{track}` is `regression`, `classification`, or `structure`, one manifest row per submission. Outside `submissions/`, so not covered by the `DenyDeleteSubmissions` bucket policy: moving a manifest file out takes that entry off the leaderboards without touching the protected submissions
 - Scores: `scores/all/{track}/{user_id}/{submission_id}/averaged-results.parquet`, `scores/phase_1/{track}/{user_id}/{submission_id}/averaged-results.parquet`
 - Leaderboard: `leaderboard/{live,interim,final}/{track}/{endpoint_slug}_leaderboard_latest.csv` — `{endpoint_slug}` is `MA` for the master (multi-endpoint tracks only), `structure` for the structure track's one leaderboard, one of the regression endpoints (e.g. `ENDPOINT_1`) for `track="regression"`, or one of the classification endpoints (e.g. `ENDPOINT_5`) for `track="classification"`
 - Entries list (every track combined): `entries/all_entries_latest.csv`

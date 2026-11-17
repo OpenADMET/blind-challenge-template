@@ -146,6 +146,7 @@ resource "aws_iam_role_policy" "lambda_s3" {
         Resource = [
           aws_s3_bucket.main.arn,
           "${aws_s3_bucket.main.arn}/submissions/*",
+          "${aws_s3_bucket.main.arn}/manifests/*",
           "${aws_s3_bucket.main.arn}/ground_truth/*",
           "${aws_s3_bucket.main.arn}/scores/*",
           "${aws_s3_bucket.main.arn}/leaderboard/*",
@@ -158,7 +159,7 @@ resource "aws_iam_role_policy" "lambda_s3" {
         Action = ["s3:PutObject"]
         Resource = [
           "${aws_s3_bucket.main.arn}/submissions/*/scores.json",
-          "${aws_s3_bucket.main.arn}/submissions/manifest/*",
+          "${aws_s3_bucket.main.arn}/manifests/*",
           "${aws_s3_bucket.main.arn}/scores/*",
           "${aws_s3_bucket.main.arn}/leaderboard/*",
           "${aws_s3_bucket.main.arn}/entries/*",

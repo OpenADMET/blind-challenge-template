@@ -1040,3 +1040,13 @@ def test_process_new_structure_submission_passes_smiles_to_scoring(
     asp.process_new_structure_submission(STRUCTURE_SK)
 
     assert score_mock.call_args.kwargs["smiles_map"] == {"mol1": "C1CNC1"}
+
+
+@pytest.mark.parametrize(
+    "paths", [REGRESSION_PATHS, CLASSIFICATION_PATHS, STRUCTURE_PATHS]
+)
+def test_manifests_are_outside_the_delete_protected_prefix(paths):
+    """#12: removing a leaderboard entry means moving its manifest, which must not
+    need the submissions/* delete protection lifted."""
+    assert paths.manifest == f"manifests/{paths.track}"
+    assert not paths.manifest.startswith("submissions/")

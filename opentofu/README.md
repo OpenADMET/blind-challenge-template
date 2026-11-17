@@ -34,8 +34,7 @@ EventBridge (S3 object-created + rate/cron schedules)
 HuggingFace Space (Gradio app)
     │
     ├── submits files ──► S3 (PutObject submissions/*) via IAM user
-    └── reads leaderboards, ground truth, scores, submissions
-        ◄── S3 (GetObject leaderboard/*, submissions/*, ground_truth/*, scores/*) via IAM user
+    └── reads leaderboards ◄── S3 (GetObject leaderboard/*) via IAM user
 ```
 
 ---
@@ -55,7 +54,7 @@ HuggingFace Space (Gradio app)
 **Bucket policy rules:**
 
 - Deny all requests not using HTTPS (`aws:SecureTransport = false`)
-- Deny `s3:DeleteObject` / `s3:DeleteObjectVersion` on `submissions/*` — submission data is immutable
+- Deny `s3:DeleteObject` / `s3:DeleteObjectVersion` on `submissions/*` — submission data is immutable. The manifests are deliberately outside it, under `manifests/` (see the layout below).
 
 **Lifecycle:**
 
@@ -83,12 +82,14 @@ submissions/
   structure/{username}/{submission_id}/
     metadata.json
     structures.zip
-  submissions/manifest/regression/
-    {username}_{submission_id}.parquet    ← Central manifest of submission data for quick lookup
-  submissions/manifest/classification/
-    {username}_{submission_id}.parquet
-  submissions/manifest/structure/
-    {username}_{submission_id}.parquet
+
+manifests/                                ← Not delete-protected, unlike submissions/
+  regression/                               One file per validated submission: the
+    {username}_{submission_id}.parquet      index the leaderboards are built from.
+  classification/                           A derived index, rebuildable from
+    {username}_{submission_id}.parquet      submissions/ and scores/. Moving a file
+  structure/                                out of here (e.g. to quarantine/) takes
+    {username}_{submission_id}.parquet      that entry off the leaderboards.
 
 ground_truth/
   activity-dataset.parquet                ← One shared dataset (both regression and
@@ -202,8 +203,8 @@ Set the resulting credentials as HuggingFace Space secrets (`AWS_ACCESS_KEY_ID`,
 
 **Lambda S3 policy grants:**
 
-- `s3:GetObject`, `s3:ListBucket` on `submissions/*`, `ground_truth/*`, `scores/*`, `leaderboard/*`, `entries/*`
-- `s3:PutObject` on `submissions/*/scores.json`, `submissions/manifest/*`, `scores/*`, `leaderboard/*`, and `entries/*`
+- `s3:GetObject`, `s3:ListBucket` on `submissions/*`, `manifests/*`, `ground_truth/*`, `scores/*`, `leaderboard/*`, `entries/*`
+- `s3:PutObject` on `submissions/*/scores.json`, `manifests/*`, `scores/*`, `leaderboard/*`, and `entries/*`
 
 Note: the Lambda role cannot delete submissions (the bucket policy denies it for all principals).
 
@@ -389,7 +390,7 @@ mechanism.
 |-----------|-------|--------|
 | `lifecycle { prevent_destroy = true }` | S3 bucket | `tofu destroy` fails unless block is manually removed first |
 | `force_destroy = var.force_destroy` (default `false`) | S3 bucket | Bucket must be empty to destroy unless explicitly overridden |
-| `DenyDeleteSubmissions` bucket policy | S3 bucket | No principal can delete objects under `submissions/*` |
+| `DenyDeleteSubmissions` bucket policy | S3 bucket | No principal can delete objects under `submissions/*`. Manifests live under `manifests/`, so removing a leaderboard entry never needs this lifted |
 | `DenyInsecureTransport` bucket policy | S3 bucket | All non-HTTPS requests denied |
 | `reserved_concurrent_executions = 5` | Evaluator Lambdas | Caps concurrent evaluation runs to limit runaway costs |
 | Public access block (all four settings) | S3 bucket | Bucket can never be made public |
