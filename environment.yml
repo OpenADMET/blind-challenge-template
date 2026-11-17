@@ -34,6 +34,7 @@ dependencies:
   - pip:
     - gradio==5.50.0              # conda-forge may lag; install via pip for latest
     - gradio-leaderboard==0.0.14  # not on conda-forge
+    - uuid-utils==1.2.0           # hf_space submission IDs (UUIDv7); stdlib uuid7 needs Python 3.14
     - pydoclint==0.9.1            # not on conda-forge
     - rdkit==2026.3.5             # via pip, not conda-forge: the conda-forge build's
                                   # libboost pin conflicts with openstructure's
