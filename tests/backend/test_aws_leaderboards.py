@@ -94,7 +94,7 @@ def _structure_scores(monkeypatch, lddt_pli: float, endpoint_label: str | None =
         }
     )
     monkeypatch.setattr(
-        asp, "score_structure_predictions", lambda predicted, gt: (per_compound, {})
+        asp, "score_structure_predictions", lambda predicted, gt, smiles_map=None: (per_compound, {})
     )
     if endpoint_label is not None:
         real_bootstrap = asp.bootstrap_structure_metrics

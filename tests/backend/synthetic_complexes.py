@@ -57,3 +57,34 @@ def complex_pdb(*ligands: list[str]) -> str:
     """A PDB file with the peptide and the given ligand residues."""
     lines = _peptide_lines() + [line for ligand in ligands for line in ligand]
     return "\n".join([*lines, "END"]) + "\n"
+
+
+def cyclobutane(
+    centre: tuple[float, float, float],
+    diagonal: float,
+    chain: str = "B",
+    resnum: int = 1,
+    first_serial: int = 500,
+) -> list[str]:
+    """HETATM lines for a flattened four-carbon ring named LIG (SMILES ``C1CCC1``).
+
+    The ring is a rhombus with 1.55 Å sides. ``diagonal`` sets the C1-C3 distance;
+    below about 2.08 Å OpenStructure's distance-based bonding adds a false C1-C3
+    bond, as it can across a real strained ring. Keep the other diagonal (C2-C4)
+    above that too: for ``diagonal`` between about 2.1 and 2.25 Å neither has a
+    false bond.
+    """
+    side = 1.55
+    other = 2 * math.sqrt(side**2 - (diagonal / 2) ** 2)
+    cx, cy, cz = centre
+    corners = [
+        (cx + diagonal / 2, cy, cz),
+        (cx, cy + other / 2, cz),
+        (cx - diagonal / 2, cy, cz),
+        (cx, cy - other / 2, cz),
+    ]
+    return [
+        f"HETATM{first_serial + i:5d}  C{i + 1:<2} LIG {chain}{resnum:4d}    "
+        f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C "
+        for i, (x, y, z) in enumerate(corners)
+    ]

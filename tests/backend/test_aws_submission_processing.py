@@ -16,11 +16,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, create_autospec
 
 import awswrangler as wr
+import numpy as np
 import pandas as pd
 import pytest
 from botocore.exceptions import ClientError
 
 from backend import aws_submission_processing as asp
+from backend import evaluate_predictions
 from backend.config import (
     ACTIVITY_PATHS,
     CLASSIFICATION_PATHS,
@@ -96,9 +98,7 @@ def test_save_validated_submission_metadata_success(monkeypatch):
 
     monkeypatch.setattr(asp.wr.s3, "to_parquet", fake_to_parquet)
     metadata_df = pd.DataFrame({"valid_submission": [True]})
-    asp.save_validated_submission_metadata(
-        REGRESSION_SK, metadata_df, REGRESSION_PATHS
-    )
+    asp.save_validated_submission_metadata(REGRESSION_SK, metadata_df, REGRESSION_PATHS)
 
     assert captured["path"] == (
         f"s3://{S3_BUCKET}/{REGRESSION_PATHS.manifest}/new-user_submission-123.parquet"
@@ -138,7 +138,9 @@ def test_create_validation_metadata_regression(example_activity_predictions_meta
     )
 
 
-def test_create_validation_metadata_classification(example_activity_predictions_metadata):
+def test_create_validation_metadata_classification(
+    example_activity_predictions_metadata,
+):
     """Validation metadata for the classification track has its own score URIs."""
     metadata = asp.create_validation_metadata(
         valid_submission=True,
@@ -416,7 +418,9 @@ def test_score_classification_submission_routes_own_endpoints_and_metrics(monkey
 # ---------------------------------------------------------------------------
 
 
-def _patch_tabular_submission_pipeline(monkeypatch, validate_attr, score_attr, score_return):
+def _patch_tabular_submission_pipeline(
+    monkeypatch, validate_attr, score_attr, score_return
+):
     """Patch every collaborator of process_new_regression_submission /
     process_new_classification_submission except the pipeline control flow under
     test."""
@@ -489,8 +493,10 @@ def test_process_new_tabular_submission_success(
 ):
     """A valid submission scores both phases and writes one manifest row."""
     score_return = (pd.DataFrame({"dummy": [1]}), pd.DataFrame({"y": [1]}))
-    score_mock, to_parquet_mock, save_metadata_mock = _patch_tabular_submission_pipeline(
-        monkeypatch, validate_attr, score_attr, score_return
+    score_mock, to_parquet_mock, save_metadata_mock = (
+        _patch_tabular_submission_pipeline(
+            monkeypatch, validate_attr, score_attr, score_return
+        )
     )
 
     getattr(asp, process_fn_name)(sk)
@@ -511,8 +517,10 @@ def test_process_new_tabular_submission_invalid_skips_scoring(
 ):
     """An invalid submission is not scored, but a manifest row is still written."""
     score_return = (pd.DataFrame({"dummy": [1]}), pd.DataFrame({"y": [1]}))
-    score_mock, to_parquet_mock, save_metadata_mock = _patch_tabular_submission_pipeline(
-        monkeypatch, validate_attr, score_attr, score_return
+    score_mock, to_parquet_mock, save_metadata_mock = (
+        _patch_tabular_submission_pipeline(
+            monkeypatch, validate_attr, score_attr, score_return
+        )
     )
     monkeypatch.setattr(
         asp,
@@ -724,7 +732,9 @@ def test_score_structure_submission_phase_0_no_filtering(monkeypatch):
         {"Molecule_Name": ["a", "b", "c"], "coverage": [1.0, 0.5, 0.0]}
     )
     monkeypatch.setattr(
-        asp, "score_structure_predictions", lambda predicted, gt: (per_compound, {})
+        asp,
+        "score_structure_predictions",
+        lambda predicted, gt, smiles_map=None: (per_compound, {}),
     )
     monkeypatch.setattr(
         asp, "bootstrap_structure_metrics", lambda df, n: pd.DataFrame({"dummy": [1]})
@@ -752,7 +762,9 @@ def test_score_structure_submission_phase_1_filters_by_isin(monkeypatch):
     )
     identifiers = pd.DataFrame({"Molecule_Name": ["a", "b", "c"], "phase": [1, 2, 1]})
     monkeypatch.setattr(
-        asp, "score_structure_predictions", lambda predicted, gt: (per_compound, {})
+        asp,
+        "score_structure_predictions",
+        lambda predicted, gt, smiles_map=None: (per_compound, {}),
     )
     monkeypatch.setattr(
         asp, "bootstrap_structure_metrics", lambda df, n: pd.DataFrame({"dummy": [1]})
@@ -780,7 +792,7 @@ def test_score_structure_submission_loads_ground_truth_when_not_provided(monkeyp
         asp, "load_structure_ground_truth", lambda: (Path("/gt"), {"loaded": "gt"})
     )
 
-    def fake_score(predicted, gt):
+    def fake_score(predicted, gt, smiles_map=None):
         captured["gt"] = gt
         return pd.DataFrame({"Molecule_Name": ["a"], "coverage": [1.0]}), {}
 
@@ -841,15 +853,18 @@ def _patch_structure_submission_pipeline(monkeypatch, tmp_path, per_compound_df)
         asp, "load_structure_ground_truth", lambda: (gt_dir, {"mol1": "gt"})
     )
 
-    score_mock = MagicMock(
-        return_value=(
-            per_compound_df,
+    # The expensive per-compound scoring; must run once per submission.
+    score_mock = MagicMock(return_value=(per_compound_df, {}))
+    monkeypatch.setattr(asp, "score_structure_predictions", score_mock)
+    # The cheap per-phase aggregation.
+    aggregate_mock = MagicMock(
+        side_effect=lambda df, phase, identifiers: (
+            df,
             pd.DataFrame(),
             pd.DataFrame({"x": [1]}),
-            {},
         )
     )
-    monkeypatch.setattr(asp, "score_structure_submission", score_mock)
+    monkeypatch.setattr(asp, "aggregate_structure_scores", aggregate_mock)
 
     # Autospecced, so a call with arguments the real function doesn't accept fails.
     to_parquet_mock = create_autospec(asp.wr.s3.to_parquet)
@@ -859,7 +874,7 @@ def _patch_structure_submission_pipeline(monkeypatch, tmp_path, per_compound_df)
     monkeypatch.setattr(asp, "save_validated_submission_metadata", save_metadata_mock)
     monkeypatch.setattr(asp, "post_result_to_discord", lambda *a, **kw: None)
 
-    return score_mock, to_parquet_mock, save_metadata_mock
+    return score_mock, aggregate_mock, to_parquet_mock, save_metadata_mock
 
 
 def test_process_new_structure_submission_full_failure_stops_after_phase_0(
@@ -877,13 +892,14 @@ def test_process_new_structure_submission_full_failure_stops_after_phase_0(
             "coverage": [0.0] * STRUCTURE_DATASET_SIZE,
         }
     )
-    score_mock, to_parquet_mock, save_metadata_mock = (
+    score_mock, aggregate_mock, to_parquet_mock, save_metadata_mock = (
         _patch_structure_submission_pipeline(monkeypatch, tmp_path, failed_df)
     )
 
     asp.process_new_structure_submission(STRUCTURE_SK)
 
     assert score_mock.call_count == 1
+    assert [c.kwargs["phase"] for c in aggregate_mock.call_args_list] == [0]
     assert to_parquet_mock.call_count == 3
     saved_metadata = save_metadata_mock.call_args[0][1]
     assert saved_metadata["valid_submission"].iloc[0] == False  # noqa: E712
@@ -899,13 +915,128 @@ def test_process_new_structure_submission_partial_failure_continues_to_phase_1(
             "coverage": [0.0] * 5 + [1.0] * (STRUCTURE_DATASET_SIZE - 5),
         }
     )
-    score_mock, to_parquet_mock, save_metadata_mock = (
+    score_mock, aggregate_mock, to_parquet_mock, save_metadata_mock = (
         _patch_structure_submission_pipeline(monkeypatch, tmp_path, partial_df)
     )
 
     asp.process_new_structure_submission(STRUCTURE_SK)
 
-    assert score_mock.call_count == 2
+    # #15: the structures are scored once; only the aggregation runs per phase.
+    assert score_mock.call_count == 1
+    assert [c.kwargs["phase"] for c in aggregate_mock.call_args_list] == [0, 1]
     assert to_parquet_mock.call_count == 6
     saved_metadata = save_metadata_mock.call_args[0][1]
     assert saved_metadata["valid_submission"].iloc[0] == True  # noqa: E712
+
+
+# ---------------------------------------------------------------------------
+# Structure track: score once, aggregate per phase (#15)
+# ---------------------------------------------------------------------------
+
+
+def _fake_single_structure_scores(monkeypatch, calls: list[str]):
+    """Deterministic per-compound scores, with "mol2" unscoreable; records calls."""
+
+    def _score(model_path, ref_path, max_pb_failures, smiles):
+        calls.append(model_path)
+        if model_path.endswith("mol2.pdb"):
+            return {"LDDT-PLI": np.nan, "BiSyRMSD": np.nan, "LDDT-LP": np.nan}, []
+        x = float(model_path[-5])
+        return {"LDDT-PLI": x / 10, "BiSyRMSD": x, "LDDT-LP": x / 20}, []
+
+    monkeypatch.setattr(evaluate_predictions, "score_single_structure", _score)
+
+
+def test_aggregating_once_scored_compounds_matches_scoring_per_phase(monkeypatch):
+    """Per-phase outputs are unchanged by scoring once and re-aggregating."""
+    calls: list[str] = []
+    _fake_single_structure_scores(monkeypatch, calls)
+    predicted = {f"mol{i}": f"/pred/mol{i}.pdb" for i in range(1, 7)}
+    ground_truth = {f"mol{i}": f"/gt/mol{i}.pdb" for i in range(1, 7)}
+    identifiers = pd.DataFrame(
+        {"Molecule_Name": list(predicted), "phase": [1, 2, 1, 2, 1, 2]}
+    )
+
+    per_phase = {
+        phase: asp.score_structure_submission(
+            predicted, phase, ground_truth=ground_truth, identifiers=identifiers
+        )
+        for phase in [0, 1]
+    }
+    assert len(calls) == 12  # the old way: every compound scored for each phase
+
+    calls.clear()
+    all_scores, _ = asp.score_structure_predictions(predicted, ground_truth)
+    for phase in [0, 1]:
+        per_compound, bootstrap_df, averaged_df = asp.aggregate_structure_scores(
+            all_scores, phase, identifiers
+        )
+        expected = per_phase[phase]
+        pd.testing.assert_frame_equal(per_compound, expected[0])
+        pd.testing.assert_frame_equal(bootstrap_df, expected[1])
+        pd.testing.assert_frame_equal(averaged_df, expected[2])
+    assert len(calls) == 6  # the new way: every compound scored once
+
+    phase_1 = asp.aggregate_structure_scores(all_scores, 1, identifiers)[0]
+    assert list(phase_1["Molecule_Name"]) == ["mol1", "mol3", "mol5"]
+
+
+def test_aggregate_structure_scores_coverage_is_per_phase():
+    per_compound = pd.DataFrame(
+        {
+            "Molecule_Name": ["a", "b", "c", "d"],
+            "LDDT-PLI": [0.5, 0.0, 0.7, 0.9],
+            "BiSyRMSD": [1.0, 10.0, 1.0, 1.0],
+            "LDDT-LP": [0.5, 0.0, 0.5, 0.5],
+            "coverage": [1.0, 0.0, 1.0, 1.0],
+        }
+    )
+    identifiers = pd.DataFrame({"Molecule_Name": list("abcd"), "phase": [1, 1, 2, 2]})
+    _, _, all_avg = asp.aggregate_structure_scores(per_compound, 0, identifiers)
+    _, _, phase_1_avg = asp.aggregate_structure_scores(per_compound, 1, identifiers)
+    coverage_col = [c for c in all_avg.columns if "coverage" in c][0]
+    assert all_avg[coverage_col].iloc[0] == pytest.approx(0.75)
+    assert phase_1_avg[coverage_col].iloc[0] == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------------------
+# Structure track: SMILES for ligand bonds (#27)
+# ---------------------------------------------------------------------------
+
+
+def test_structure_smiles_map_from_identifiers():
+    identifiers = pd.DataFrame(
+        {
+            "Molecule_Name": ["a", "b", "c", "d"],
+            "SMILES": ["CCO", None, "  ", "c1ccccc1"],
+            "phase": [1, 1, 2, 2],
+        }
+    )
+    assert asp.structure_smiles_map(identifiers) == {"a": "CCO", "d": "c1ccccc1"}
+
+
+@pytest.mark.parametrize(
+    "identifiers", [None, pd.DataFrame({"Molecule_Name": ["a"], "phase": [1]})]
+)
+def test_structure_smiles_map_without_smiles_is_none(identifiers):
+    assert asp.structure_smiles_map(identifiers) is None
+
+
+def test_process_new_structure_submission_passes_smiles_to_scoring(
+    monkeypatch, tmp_path
+):
+    per_compound = pd.DataFrame({"Molecule_Name": ["mol1"], "coverage": [1.0]})
+    score_mock, *_ = _patch_structure_submission_pipeline(
+        monkeypatch, tmp_path, per_compound
+    )
+    monkeypatch.setattr(
+        asp,
+        "load_track_identifiers",
+        lambda paths: pd.DataFrame(
+            {"Molecule_Name": ["mol1"], "SMILES": ["C1CNC1"], "phase": [1]}
+        ),
+    )
+
+    asp.process_new_structure_submission(STRUCTURE_SK)
+
+    assert score_mock.call_args.kwargs["smiles_map"] == {"mol1": "C1CNC1"}

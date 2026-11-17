@@ -45,6 +45,7 @@ This keeps dependencies and code identical across evaluators while preserving di
 - `aws_leaderboards.py`: Builds and saves ranked leaderboards from manifest + score data, batch-loaded via DuckDB. `create_track_leaderboards` builds one leaderboard per endpoint, plus a macro-ranked master (`MACRO_ENDPOINT_LABEL`, "MA") when a track has more than one endpoint; significance testing and invalid-submission filtering apply only to that master, and only for "interim"/"final" stages. A track with zero endpoints (e.g. `CLASSIFICATION_ENDPOINTS = []`) returns `{}` immediately rather than building anything.
 - `submission_validation.py`: Pandera validation for regression/classification files and zip checks for structure files.
 - `evaluate_predictions.py`: Bootstrap scoring + aggregation helpers.
+- `ligand_bonds.py`: Gives structure-track ligands the bonds of their ground-truth SMILES (from `structure-identifiers.parquet`) instead of bonds guessed from atom distances, for OST and PoseBusters. See [docs/structure-scoring.md](../docs/structure-scoring.md).
 - `utils.py`: Phase determination + utility transforms/sampling.
 - `discord_bot.py`: Posts submission results to Discord via webhook.
 - `cli.py`: Local validation CLI (`python -m backend.cli ...`).

@@ -350,9 +350,7 @@ def _score_tabular_submission(
     track_bootstrap_results = add_macro_endpoint(
         bootstrap_results, endpoints=endpoints, metrics=metrics
     )
-    by_endpoint_results = average_bootstrap_results_by_endpoint(
-        track_bootstrap_results
-    )
+    by_endpoint_results = average_bootstrap_results_by_endpoint(track_bootstrap_results)
     result_df = pivot_endpoint_results_wide(by_endpoint_results)
     return track_bootstrap_results, result_df
 
@@ -520,7 +518,10 @@ def process_new_regression_submission(sk: SubmissionKey) -> None:
 
     """
     _process_new_tabular_submission(
-        sk, REGRESSION_PATHS, validate_regression_submission, score_regression_submission
+        sk,
+        REGRESSION_PATHS,
+        validate_regression_submission,
+        score_regression_submission,
     )
 
 
@@ -710,13 +711,107 @@ def load_structure_ground_truth() -> tuple[Path, dict[str, str]]:
     return tmp_dir, ground_truth
 
 
+def structure_smiles_map(identifiers: pd.DataFrame | None) -> dict[str, str] | None:
+    """Build the molecule ID -> ground-truth SMILES mapping used in scoring.
+
+    The SMILES come from an optional ``SMILES`` column in
+    ``structure-identifiers.parquet``. With them, each ligand's bonds are taken
+    from its SMILES rather than guessed from atom distances (see
+    ``evaluate_predictions.score_single_structure``).
+
+    Parameters
+    ----------
+    identifiers : pd.DataFrame | None
+        The structure identifiers, or None if they couldn't be loaded.
+
+    Returns
+    -------
+    dict[str, str] | None
+        The mapping, skipping blank SMILES, or None when there is no ``SMILES``
+        column, in which case ligand bonds are guessed from distances.
+
+    """
+    if identifiers is None or "SMILES" not in identifiers.columns:
+        logger.warning(
+            "Structure identifiers have no SMILES column, so ligand bonds will be "
+            "guessed from atom distances. Add SMILES to "
+            "structure-identifiers.parquet."
+        )
+        return None
+    with_smiles = identifiers.dropna(subset=["SMILES"])
+    with_smiles = with_smiles[with_smiles["SMILES"].astype(str).str.strip() != ""]
+    return dict(zip(with_smiles["Molecule_Name"], with_smiles["SMILES"].astype(str)))
+
+
+def aggregate_structure_scores(
+    per_compound_df: pd.DataFrame,
+    phase: int,
+    identifiers: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Aggregate already-scored compounds into one phase's leaderboard scores.
+
+    Cheap: filters ``per_compound_df`` to the phase's compounds, bootstraps it and
+    averages the bootstrap. No structure is re-scored, so a submission is scored
+    once (``score_structure_predictions``) and aggregated once per phase. This
+    works because a compound's structure scores don't depend on which other
+    compounds are in the set. The activity tracks can't do the same: R², Spearman
+    and Kendall are whole-sample statistics and must be recomputed per phase.
+
+    Parameters
+    ----------
+    per_compound_df : pd.DataFrame
+        Output of ``score_structure_predictions`` for the whole submission.
+    phase : int
+        0 = all compounds; 1 = interim subset only (filtered via
+        ``structure-identifiers.parquet``).
+    identifiers : pd.DataFrame | None
+        Optional preloaded structure identifiers; loaded from S3 when needed and
+        not given.
+
+    Returns
+    -------
+    tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+        (per_compound_df, bootstrap_df, averaged_df) for the phase: the phase's
+        rows of ``per_compound_df``, the full bootstrap results, and the
+        single-row, endpoint-prefixed mean/std per metric (see
+        ``evaluate_predictions.pivot_endpoint_results_wide``).
+
+    """
+    if phase != 0:
+        phase_identifiers = (
+            identifiers
+            if identifiers is not None
+            else load_track_identifiers(STRUCTURE_PATHS)
+        )
+        phase_ids = set(
+            phase_identifiers.loc[phase_identifiers["phase"] == phase, "Molecule_Name"]
+        )
+        per_compound_df = per_compound_df[
+            per_compound_df["Molecule_Name"].isin(phase_ids)
+        ]
+
+    bootstrap_df = bootstrap_structure_metrics(per_compound_df, BOOTSTRAP_SAMPLES)
+    by_endpoint_results = average_bootstrap_results_by_endpoint(bootstrap_df)
+    # Coverage is a scalar property of the submission, not a distributional quantity —
+    # store the plain mean without bootstrapped uncertainty. Added alongside the other
+    # metrics before pivoting so it flows through the same endpoint-prefixed wide format
+    # (see pivot_endpoint_results_wide) as every other track.
+    by_endpoint_results["coverage_mean"] = per_compound_df["coverage"].mean()
+    averaged_df = pivot_endpoint_results_wide(by_endpoint_results)
+    return per_compound_df, bootstrap_df, averaged_df
+
+
 def score_structure_submission(
     predicted: dict[str, str],
     phase: int,
     ground_truth: dict[str, str] | None = None,
     identifiers: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, list[str]]]:
-    """Score a structure submission against the ground truth.
+    """Score a structure submission against the ground truth for one phase.
+
+    Convenience wrapper: ``score_structure_predictions`` then
+    ``aggregate_structure_scores``. ``process_new_structure_submission`` calls
+    those two directly so that the expensive scoring runs once for all phases.
 
     Parameters
     ----------
@@ -730,7 +825,8 @@ def score_structure_submission(
         Optional preloaded ground-truth mapping to avoid repeated
         downloads/extraction.
     identifiers : pd.DataFrame | None
-        Optional preloaded structure identifiers.
+        Optional preloaded structure identifiers. Their ``SMILES`` column, if
+        present, supplies each ligand's bonds (see ``structure_smiles_map``).
 
     Returns
     -------
@@ -745,29 +841,12 @@ def score_structure_submission(
     """
     if ground_truth is None:
         _, ground_truth = load_structure_ground_truth()
-    per_compound_df, pb_failures = score_structure_predictions(predicted, ground_truth)
-
-    if phase != 0:
-        phase_identifiers = (
-            identifiers
-            if identifiers is not None
-            else load_track_identifiers(STRUCTURE_PATHS)
-        )
-        interim_ids = set(
-            phase_identifiers.loc[phase_identifiers["phase"] == phase, "Molecule_Name"]
-        )
-        per_compound_df = per_compound_df[
-            per_compound_df["Molecule_Name"].isin(interim_ids)
-        ]
-
-    bootstrap_df = bootstrap_structure_metrics(per_compound_df, BOOTSTRAP_SAMPLES)
-    by_endpoint_results = average_bootstrap_results_by_endpoint(bootstrap_df)
-    # Coverage is a scalar property of the submission, not a distributional quantity —
-    # store the plain mean without bootstrapped uncertainty. Added alongside the other
-    # metrics before pivoting so it flows through the same endpoint-prefixed wide format
-    # (see pivot_endpoint_results_wide) as every other track.
-    by_endpoint_results["coverage_mean"] = per_compound_df["coverage"].mean()
-    averaged_df = pivot_endpoint_results_wide(by_endpoint_results)
+    per_compound_df, pb_failures = score_structure_predictions(
+        predicted, ground_truth, smiles_map=structure_smiles_map(identifiers)
+    )
+    per_compound_df, bootstrap_df, averaged_df = aggregate_structure_scores(
+        per_compound_df, phase, identifiers
+    )
     return per_compound_df, bootstrap_df, averaged_df, pb_failures
 
 
@@ -812,12 +891,19 @@ def process_new_structure_submission(sk: SubmissionKey) -> None:
         if validation_result.is_valid:
             try:
                 ground_truth_tmp_dir, ground_truth = load_structure_ground_truth()
+                # The expensive step (OST + PoseBusters per compound) runs once;
+                # each phase is a cheap re-aggregation of the same scores.
+                all_per_compound_df, pb_failures = score_structure_predictions(
+                    predicted,
+                    ground_truth,
+                    smiles_map=structure_smiles_map(structure_identifiers),
+                )
+                validation_result.pb_failures = pb_failures
                 for phase in [0, 1]:
-                    per_compound_df, bootstrap_df, averaged_df, phase_pb_failures = (
-                        score_structure_submission(
-                            predicted,
+                    per_compound_df, bootstrap_df, averaged_df = (
+                        aggregate_structure_scores(
+                            all_per_compound_df,
                             phase=phase,
-                            ground_truth=ground_truth,
                             identifiers=structure_identifiers,
                         )
                     )
@@ -840,9 +926,8 @@ def process_new_structure_submission(sk: SubmissionKey) -> None:
                         sk.submission_id,
                         base,
                     )
-                    # Check for failed scoring; collect pb failures from the full set
+                    # Check for failed scoring on the full set (phase 0)
                     if phase == 0:
-                        validation_result.pb_failures = phase_pb_failures
                         failed_scoring = per_compound_df[
                             per_compound_df["coverage"] == 0
                         ]

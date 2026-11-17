@@ -96,7 +96,7 @@ ground_truth/
                                              classification both score against this,
                                              filtered to their own columns
   structure-dataset.zip
-  structure-identifiers.parquet
+  structure-identifiers.parquet           ← Molecule_Name, phase, and (recommended) SMILES
 
 scores/all/regression/                    ← Scored against the full (phase 0) test set
   {username}/{submission_id}/
