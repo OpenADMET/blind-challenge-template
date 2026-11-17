@@ -27,7 +27,7 @@ def loguru_caplog():
 
 
 @pytest.fixture()
-def example_activity_gound_truth_path():
+def example_activity_ground_truth_path():
     """Example activity ground truth data path for testing."""
     return (
         Path(__file__).parent
@@ -91,9 +91,9 @@ def example_structure_expected_ids():
 
 
 @pytest.fixture()
-def example_activity_gound_truth_data(example_activity_gound_truth_path):
+def example_activity_ground_truth_data(example_activity_ground_truth_path):
     """Example activity ground truth data for testing."""
-    return pd.read_parquet(example_activity_gound_truth_path)
+    return pd.read_parquet(example_activity_ground_truth_path)
 
 
 @pytest.fixture()
@@ -144,8 +144,8 @@ def example_validation_metadata():
 
 
 @pytest.fixture
-def mock_averaged_results():
-    """Mock averaged results for testing leaderboard entry parsing."""
+def example_averaged_results():
+    """Example averaged results for testing leaderboard entry parsing."""
     return pd.DataFrame(
         {
             "accuracy_mean": [0.90],
@@ -158,8 +158,8 @@ def mock_averaged_results():
 
 
 @pytest.fixture
-def mock_bootstrap_data():
-    """Mock bootstrapped data for testing bootstrap score parsing."""
+def example_bootstrap_data():
+    """Example bootstrapped data for testing bootstrap score parsing."""
     return pd.DataFrame(
         {
             "Sample": list(range(100)),
