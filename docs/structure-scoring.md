@@ -57,7 +57,7 @@ flowchart TD
 
     BOOTDF --> BYEP["average_bootstrap_results_by_endpoint()<br/>mean &amp; std over the B samples<br/>(shared helper, reused from activity)"]
     PERCOMPOUNDDF --> COVMEAN["coverage_mean = per-compound coverage.mean()<br/>added directly — coverage is scalar,<br/>not bootstrapped"]
-    BYEP --> PIVOT["pivot_endpoint_results_wide()<br/>one wide row, prefixed 'Structure_...'<br/>(shared helper, reused from activity)"]
+    BYEP --> PIVOT["pivot_endpoint_results_wide()<br/>one wide row, prefixed 'structure_...'<br/>(shared helper, reused from activity)"]
     COVMEAN --> PIVOT
     PIVOT --> WIDESAVE[("averaged-results.parquet")]
 
@@ -138,10 +138,7 @@ The coverage of all the compounds is used to classify the whole submission:
   endpoint. There is no macro-average pseudo-endpoint for structure (see
   [scoring-and-leaderboards.md](scoring-and-leaderboards.md) — a single-endpoint track
   never gets one), and `STRUCTURE_SPEC.endpoints[0]` is also the leaderboard's one and only
-  endpoint slug. Before v0.1.1 the label was a hard-coded `"Structure"`, which didn't
-  match the config and broke every structure leaderboard build. Leaderboard building
-  matches endpoints case-insensitively, so score files saved with the old label still
-  work.
+  endpoint slug.
 - **Ranked by `LDDT-PLI` descending** (`STRUCTURE_SPEC`: `primary_metric="LDDT-PLI"`,
   `higher_is_better=True`) — higher is better, like classification's `MCC` but
   unlike regression's `ST-RAE` (lower is better, ascending).
@@ -175,12 +172,9 @@ The coverage of all the compounds is used to classify the whole submission:
   valid submission with PoseBusters failures gets an orange (not green) message
   listing which compounds and checks failed, so organisers can tell "scored poorly"
   apart from "structurally implausible."
-- **`dummy_score_single_structure`** (random scores, no OST dependency) exists in
-  `evaluate_predictions.py` but is **not currently called anywhere** —
-  `score_structure_predictions` always calls the real `score_single_structure`. Real
-  OST scoring is imported lazily inside `score_single_structure`'s `try` block (not at
-  module load time), so importing `evaluate_predictions` doesn't require OST to be
-  installed — only actually scoring a structure does.
+- **OST is imported lazily**, inside `score_single_structure`'s `try` block rather than
+  at module load time, so importing `evaluate_predictions` doesn't require OST to be
+  installed; only scoring a structure does.
 - **One model ligand, any number of reference copies.** Validation rejects a
   submission unless every file has exactly one `LIG` residue (see
   `backend/README.md`'s Structure submissions section), and the scorer returns the NaN
@@ -203,7 +197,7 @@ The coverage of all the compounds is used to classify the whole submission:
 | SMILES lookup from the identifiers | `structure_smiles_map` | `backend/aws_submission_processing.py` |
 | 2. Per-submission scoring | `score_structure_predictions` (`score_compounds_raw` + `apply_coverage_and_penalties`) | `backend/evaluate_predictions.py` |
 | 3. Per-set aggregation | `aggregate_structure_scores`, `bootstrap_structure_metrics` | `backend/aws_submission_processing.py`, `backend/evaluate_predictions.py` |
-| S3 orchestration, submission-level QA | `process_new_structure_submission` (`score_structure_submission` is a one-set convenience wrapper) | `backend/aws_submission_processing.py` |
+| S3 orchestration, submission-level QA | `process_new_structure_submission` (scores once with `score_structure_predictions`, then `aggregate_structure_scores` per compound set) | `backend/aws_submission_processing.py` |
 | Zip extraction (submission + ground truth) | `fetch_structure_submission_data`, `load_structure_ground_truth`, `_extract_pdb_files` | `backend/aws_submission_processing.py` |
 | Submission-time validation (file count, `.zip` suffix) | `validate_structure_submission` | `backend/submission_validation.py` |
 | PoseBusters failure reporting (Discord) | `prepare_discord_message`, `_format_pb_failures` | `backend/discord_bot.py` |

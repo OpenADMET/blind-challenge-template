@@ -241,11 +241,6 @@ def _narrow_averaged_results_to_endpoint(
     it came from — letting a single ``primary_metric`` string (e.g. ``"ST-RAE"``) work
     for any endpoint's leaderboard.
 
-    The prefix match is case-insensitive. Structure scores used to be saved under a
-    hard-coded ``"Structure"`` label while ``STRUCTURE_SPEC.endpoints`` is
-    ``["structure"]``, and files already scored that way are still in S3. Endpoint
-    names must therefore not differ from each other only by case.
-
     Parameters
     ----------
     wide_results : pd.DataFrame
@@ -259,11 +254,9 @@ def _narrow_averaged_results_to_endpoint(
         Single-row DataFrame with that endpoint's bare metric columns.
 
     """
-    prefix = f"{endpoint}_".lower()
+    prefix = f"{endpoint}_"
     columns = {
-        c: c[len(prefix) :]
-        for c in wide_results.columns
-        if c.lower().startswith(prefix)
+        c: c[len(prefix) :] for c in wide_results.columns if c.startswith(prefix)
     }
     return wide_results[list(columns.keys())].rename(columns=columns)
 
@@ -450,16 +443,13 @@ def _build_final_leaderboard(
     # metric name (e.g. "ST-RAE") regardless of which endpoint/track this leaderboard is
     # for. Bootstrap files hold one row per (Sample, Endpoint) pair — without
     # narrowing, EntryComparison's merge-on-"Sample" would fan out across every
-    # endpoint. Endpoint matching is case-insensitive; see
-    # _narrow_averaged_results_to_endpoint.
+    # endpoint.
     averaged_scores = {
         idx: _narrow_averaged_results_to_endpoint(df, endpoint)
         for idx, df in averaged_scores.items()
     }
     bootstrap_scores = {
-        idx: df[df["Endpoint"].str.lower() == endpoint.lower()].drop(
-            columns=["Endpoint"]
-        )
+        idx: df[df["Endpoint"] == endpoint].drop(columns=["Endpoint"])
         for idx, df in bootstrap_scores.items()
     }
 

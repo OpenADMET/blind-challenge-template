@@ -817,54 +817,6 @@ def aggregate_structure_scores(
     return per_compound_df, bootstrap_df, averaged_df
 
 
-def score_structure_submission(
-    predicted: dict[str, str],
-    compound_set: str,
-    ground_truth: dict[str, str] | None = None,
-    identifiers: pd.DataFrame | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, list[str]]]:
-    """Score a structure submission against the ground truth for one compound set.
-
-    Convenience wrapper: ``score_structure_predictions`` then
-    ``aggregate_structure_scores``. ``process_new_structure_submission`` calls
-    those two directly so that the expensive scoring runs once for all sets.
-
-    Parameters
-    ----------
-    predicted : dict[str, str]
-        Mapping from molecule ID to predicted PDB path, as returned by
-        ``fetch_structure_submission_data``.
-    compound_set : str
-        "live", "hidden" or "all".
-    ground_truth : dict[str, str] | None
-        Optional preloaded ground-truth mapping to avoid repeated
-        downloads/extraction.
-    identifiers : pd.DataFrame | None
-        Optional preloaded structure identifiers. Their ``SMILES`` column, if
-        present, supplies each ligand's bonds (see ``structure_smiles_map``).
-
-    Returns
-    -------
-    tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, list[str]]]
-        A tuple of (per_compound_df, bootstrap_df, averaged_df, pb_failures)
-        where per_compound_df contains per-compound raw scores, bootstrap_df the
-        full bootstrap results, averaged_df the single-row, endpoint-prefixed
-        mean/std per metric (see ``evaluate_predictions.pivot_endpoint_results_wide``),
-        and pb_failures maps molecule ID to the PoseBusters check names that caused
-        its scores to be zeroed (only compounds exceeding the failure threshold appear).
-
-    """
-    if ground_truth is None:
-        _, ground_truth = load_structure_ground_truth()
-    per_compound_df, pb_failures = score_structure_predictions(
-        predicted, ground_truth, smiles_map=structure_smiles_map(identifiers)
-    )
-    per_compound_df, bootstrap_df, averaged_df = aggregate_structure_scores(
-        per_compound_df, compound_set, identifiers
-    )
-    return per_compound_df, bootstrap_df, averaged_df, pb_failures
-
-
 def process_new_structure_submission(sk: SubmissionKey) -> None:
     """Validate, score, and persist a new structure submission from S3.
 

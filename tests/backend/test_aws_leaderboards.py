@@ -63,24 +63,11 @@ def test_narrow_averaged_results_to_endpoint():
     assert narrowed_macro["RAE_mean"].iloc[0] == 0.2
 
 
-def test_narrow_averaged_results_to_endpoint_is_case_insensitive():
-    """Structure score files saved before v0.1.1 use a "Structure_" prefix while
-    STRUCTURE_SPEC.endpoints is ["structure"]; narrowing must still find them."""
-    wide = pd.DataFrame(
-        {"Structure_LDDT-PLI_mean": [0.8], "Structure_LDDT-PLI_std": [0.1]}
-    )
-    narrowed = _narrow_averaged_results_to_endpoint(wide, STRUCTURE_SPEC.endpoints[0])
-    assert set(narrowed.columns) == {"LDDT-PLI_mean", "LDDT-PLI_std"}
-    assert narrowed["LDDT-PLI_mean"].iloc[0] == 0.8
-
-
-def _structure_scores(monkeypatch, lddt_pli: float, endpoint_label: str | None = None):
+def _structure_scores(lddt_pli: float):
     """Run the real structure aggregation on a synthetic per-compound table.
 
-    Monkeypatches out OST scoring only; bootstrapping, averaging, coverage and the
-    wide pivot are the production code path in ``score_structure_submission``.
-    ``endpoint_label`` relabels the bootstrap rows, to mimic files scored before
-    v0.1.1 with the hard-coded "Structure" label.
+    Skips OST scoring only; bootstrapping, averaging, coverage and the wide pivot are
+    the production code path (``aggregate_structure_scores``).
     """
     rng = np.random.default_rng(0)
     n = 20
@@ -93,33 +80,14 @@ def _structure_scores(monkeypatch, lddt_pli: float, endpoint_label: str | None =
             "coverage": 1.0,
         }
     )
-    monkeypatch.setattr(
-        asp,
-        "score_structure_predictions",
-        lambda predicted, gt, smiles_map=None: (per_compound, {}),
-    )
-    if endpoint_label is not None:
-        real_bootstrap = asp.bootstrap_structure_metrics
-        monkeypatch.setattr(
-            asp,
-            "bootstrap_structure_metrics",
-            lambda df, b: real_bootstrap(df, b).assign(Endpoint=endpoint_label),
-        )
-    _, bootstrap_df, averaged_df, _ = asp.score_structure_submission(
-        predicted={}, compound_set="all", ground_truth={}
-    )
-    monkeypatch.undo()
+    _, bootstrap_df, averaged_df = asp.aggregate_structure_scores(per_compound, "all")
     return averaged_df, bootstrap_df
 
 
 def test_structure_leaderboard_builds_end_to_end(monkeypatch):
     """Regression test for #25: a structure leaderboard builds from real aggregation
-    output, including an entry scored under the pre-v0.1.1 "Structure" label."""
-    scores = [
-        _structure_scores(monkeypatch, 0.9),
-        _structure_scores(monkeypatch, 0.5),
-        _structure_scores(monkeypatch, 0.7, endpoint_label="Structure"),
-    ]
+    output."""
+    scores = [_structure_scores(0.9), _structure_scores(0.5), _structure_scores(0.7)]
     manifest = pd.DataFrame(
         {
             "username": ["alice", "bob", "carol"],

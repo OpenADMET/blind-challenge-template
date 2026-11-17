@@ -200,10 +200,10 @@ def _summary_endpoint(spec: TrackSpec) -> str:
 
 
 def _bootstrap_for_endpoint(boot: pd.DataFrame, endpoint: str) -> pd.DataFrame:
-    """Narrow bootstrap scores to one endpoint (matched case-insensitively)."""
+    """Narrow bootstrap scores to one endpoint."""
     if "Endpoint" not in boot.columns:
         return boot
-    mask = boot["Endpoint"].astype(str).str.lower() == endpoint.lower()
+    mask = boot["Endpoint"].astype(str) == endpoint
     return boot[mask].drop(columns="Endpoint")
 
 

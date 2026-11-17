@@ -75,33 +75,13 @@ def _metrics_for_endpoint(endpoint: str) -> list[tuple[str, Callable]]:
 def score_activity_predictions(
     predictions: pd.DataFrame, ground_truth: pd.DataFrame, endpoints: list[str]
 ) -> pd.DataFrame:
-    """Score the activity predictions against the ground truth.
+    """Score activity predictions on bootstrap samples of the compounds.
 
-    Metrics are calculated for bootstrapped samples of the dataset to allow for testing
-    the statistical significance of differences between submissions. Each endpoint is
-    scored with the metric list appropriate to its type — regression endpoints get
-    ``REGRESSION_SPEC.metric_functions``, classification endpoints get ``CLASSIFICATION_SPEC.metric_functions``
-    — see ``_metrics_for_endpoint``.
-
-    Each endpoint is scored only on the compounds that have a ground-truth value for
-    that endpoint — a compound not tested for a given endpoint has ``y_true == NaN``
-    there and is excluded from that endpoint's bootstrap sampling entirely. Every
-    compound with a ground-truth value is expected to have a prediction (participants
-    are asked to predict every compound, and submission_validation.py is the primary
-    check for missing predictions); a NaN prediction for such a compound is treated as
-    a validation failure here too.
-
-    Regression endpoints carry credible-interval bound columns in ``ground_truth``
-    (named ``f"{endpoint}{REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX}"`` /
-    ``f"{endpoint}{REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX}"``), used by the
-    soft-thresholded RAE metric (``ST-RAE``). When present, these are threaded through
-    to ``bootstrap_metrics`` alongside ``y_true``/``y_pred``; classification endpoints
-    have no such columns, so ``None`` is passed instead (harmless, since none of
-    ``CLASSIFICATION_SPEC.metric_functions`` consume them).
-
-    This function does not compute the macro-averaged "MA" pseudo-endpoint. Callers
-    that want a track's "MA" row should call ``add_macro_endpoint`` on this function's
-    output with the same ``endpoints`` (and that track's own metrics).
+    Each endpoint uses its own track's metrics (``_metrics_for_endpoint``) and only
+    the compounds with a ground-truth value for it. A missing prediction for such a
+    compound is an error. Regression endpoints pass their credible-interval columns
+    to the metrics that need them (``ST-RAE``). The macro "MA" pseudo-endpoint is added
+    separately, by ``add_macro_endpoint``.
 
     Parameters
     ----------
@@ -216,18 +196,12 @@ def add_macro_endpoint(
     endpoints: list[str],
     metrics: list[tuple[str, Callable]],
 ) -> pd.DataFrame:
-    """Narrow to one track's endpoints/metrics and append its macro "MA" row.
+    """Narrow to one track's endpoints and metrics, and append its macro "MA" rows.
 
-    ``score_activity_predictions`` scores every activity endpoint (regression and
-    classification) in one call, concatenating per-endpoint frames that have
-    *different* metric columns (regression rows have MAE/ST-RAE/..., classification rows
-    have MCC/Accuracy/...) — the concatenated result has both sets of columns, NaN
-    wherever a metric doesn't apply to that row's endpoint. This filters rows down to
-    just ``endpoints`` (one track's real endpoints) and columns down to just
-    ``metrics`` (that track's own metrics), so no cross-track NaN columns leak into
-    the result, then appends a macro-averaged "MA" row set (via
-    ``compute_macro_bootstrap_results``) when there's more than one endpoint to
-    average across.
+    ``score_activity_predictions`` can return several tracks' endpoints at once, each
+    with its own metric columns. This keeps just ``endpoints`` and ``metrics``, then
+    adds the macro average (``compute_macro_bootstrap_results``) when there's more than
+    one endpoint.
 
     Parameters
     ----------
@@ -277,21 +251,9 @@ def compute_macro_bootstrap_results(
     For every bootstrap sample, every metric in ``metrics`` is macro-averaged across
     endpoints with a plain arithmetic mean.
 
-    Spearman_R was previously averaged via a Fisher z-transform (``arctanh`` /
-    ``tanh``), the standard variance-stabilising treatment for combining several
-    noisy *estimates of the same underlying correlation* (e.g. meta-analysis, or
-    averaging one endpoint's Spearman across repeated resamples of the same data).
-    That doesn't apply here: this average combines Spearman scores from *different*
-    endpoints, which are unrelated true correlations, not repeated estimates of one. Fisher's z blows up near +/-1 (``arctanh(1) = inf``,
-    clipped in practice but still huge — e.g. ``arctanh(1 - 1e-7) ≈ 8.4`` vs.
-    ``arctanh(0) = 0``), so a submission with a near-perfect Spearman on a couple of
-    endpoints and ~0 on the rest could macro-average to ~0.99 instead of the
-    naively-expected ~0.5, letting a handful of easy/lucky endpoints dominate the
-    macro score. A plain mean — already used for ST-RAE/MAE/R2/Kendall_Tau — doesn't have
-    this failure mode, so Spearman_R now uses one too, for the same reason
-    Kendall_Tau always has: Fisher's z-transform has no standard extension to
-    Kendall's tau (different asymptotic sampling distribution), so there was never a
-    transform-based option for it here.
+    That includes the correlations: a Fisher z-transform suits repeated estimates of
+    one correlation, not different endpoints, and near +/-1 it lets one or two
+    near-perfect endpoints dominate (see docs/scoring-and-leaderboards.md).
 
     Parameters
     ----------
@@ -326,22 +288,12 @@ def compute_macro_bootstrap_results(
 
 
 def pivot_endpoint_results_wide(by_endpoint_results: pd.DataFrame) -> pd.DataFrame:
-    """Pivot per-endpoint mean/std results into a single wide row.
+    """Pivot per-endpoint mean/std results into one wide row.
 
-    ``by_endpoint_results`` (as returned by ``average_bootstrap_results_by_endpoint``)
-    has one row per endpoint (indexed by endpoint name, including the synthetic
-    ``MACRO_ENDPOINT_LABEL`` ("MA") pseudo-endpoint computed by
-    ``compute_macro_bootstrap_results``) and one column per ``<metric>_mean`` /
-    ``<metric>_std``. This flattens it into a single-row DataFrame suitable for saving
-    as a submission's ``averaged-results.parquet``, with every endpoint's columns
-    consistently prefixed as ``f"{endpoint}_{metric}_{mean|std}"`` (e.g.
-    ``"ENDPOINT_1_MAE_mean"``, ``"MA_ST-RAE_mean"``).
-
-    A leaderboard for any single endpoint (macro or real) is then built by narrowing
-    back down to that endpoint's columns and stripping the prefix — see
-    ``aws_leaderboards._narrow_averaged_results_to_endpoint`` — so ``primary_metric``
-    is always a bare metric name (e.g. ``"ST-RAE"``) regardless of which endpoint a
-    given leaderboard targets.
+    The row (saved as ``averaged-results.parquet``) has every endpoint's columns,
+    prefixed ``f"{endpoint}_{metric}_{mean|std}"`` (e.g. ``"MA_ST-RAE_mean"``).
+    Leaderboards narrow it back to one endpoint's bare columns
+    (``aws_leaderboards._narrow_averaged_results_to_endpoint``).
 
     Parameters
     ----------
@@ -524,29 +476,17 @@ def score_single_structure(
 ) -> tuple[dict[str, float], list[str]]:
     """Score one predicted protein-ligand complex PDB against the reference.
 
-    Runs SCRMSDScorer (BiSyRMSD + LDDT-LP) and LDDTPLIScorer (LDDT-PLI) and
-    returns the top-scoring ligand pair ranked by LDDT-PLI then BiSyRMSD.
+    Runs OST's SCRMSDScorer (BiSyRMSD, LDDT-LP) and LDDTPLIScorer (LDDT-PLI) and keeps
+    the best ligand pair, by LDDT-PLI then BiSyRMSD. With ``smiles``, both ligands are
+    rebuilt with bonds from it (``ligand_bonds.ligands_from_pdb``), since OST's
+    distance-based guess adds false bonds across strained rings; if either can't be
+    rebuilt, both fall back to the guess.
 
-    When ``smiles`` is given, both scorers get ligands whose bonds come from it
-    (``ligand_bonds.ligands_from_pdb``) rather than from OST's guess from atom
-    distances, which adds false bonds across strained rings and then fails to
-    match the two ligands. Both ligands are rebuilt or neither is: comparing a
-    SMILES-derived graph with a guessed one would bring the mismatch back. If
-    either can't be rebuilt (no SMILES, or the atoms don't match it), the
-    distance-based ``LIG`` selection is used, as before, so no compound scores
-    worse than without SMILES.
-
-    Also runs PoseBusters (dock config) on the predicted complex. The complex is
-    split into ligand and protein via ``Chem.SplitMolByPDBResidues``; the
-    ligand's bond orders come from ``smiles`` when it matches (RDKit's PDB
-    parser leaves every bond single, which breaks geometry and energy checks).
-    ``mol_cond`` is the
-    protein from the *predicted* complex so the ligand and receptor are in the
-    same coordinate frame. If the number of failed PoseBusters checks exceeds
-    ``max_pb_failures``, all three metric scores are overridden with worst-case
-    values (LDDT-PLI=0, LDDT-LP=0, BiSyRMSD=``BISYRMSD_NAN_PENALTY``).
-    Returns NaN for every metric if scoring fails for any reason, so that a
-    single bad submission file does not abort the full evaluation.
+    PoseBusters (dock config) checks the predicted ligand against the predicted
+    protein, with bond orders from ``smiles`` when it matches. More than
+    ``max_pb_failures`` failed checks gives worst-case scores (LDDT 0, BiSyRMSD
+    ``BISYRMSD_NAN_PENALTY``). Any scoring error gives NaN for every metric, so one bad
+    file doesn't stop the evaluation.
 
     Parameters
     ----------
@@ -790,19 +730,6 @@ def score_single_structure(
         return dict(_NAN_STRUCTURE_METRICS), []
 
 
-def dummy_score_single_structure(
-    model_path: str, ref_path: str
-) -> tuple[dict[str, float], list[str]]:
-    """Dummy scoring function that returns random scores for testing."""
-    import random
-
-    return {
-        "LDDT-PLI": random.uniform(0, 1),
-        "BiSyRMSD": random.uniform(0, 5),
-        "LDDT-LP": random.uniform(0, 1),
-    }, []
-
-
 def score_compounds_raw(
     predicted_structures: dict[str, str],
     ground_truth_structures: dict[str, str],
@@ -964,7 +891,7 @@ def bootstrap_structure_metrics(
     ``bootstrap_metrics``, so ``average_bootstrap_results_by_endpoint`` can be
     reused unchanged. Coverage is a scalar property of the whole submission and
     is not bootstrapped — it is added to ``averaged_df`` separately in
-    ``score_structure_submission``.
+    ``aws_submission_processing.aggregate_structure_scores``.
 
     Parameters
     ----------

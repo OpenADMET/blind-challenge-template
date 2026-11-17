@@ -137,20 +137,12 @@ flowchart TD
   endpoint.
 - **Every metric uses a plain arithmetic mean across endpoints**, including the two
   bounded correlation coefficients (`Spearman_R`, `Kendall_Tau`).
-  `Spearman_R` previously used a Fisher z-transform (`arctanh` → mean(z) → `tanh`) —
-  the standard variance-stabilising treatment for combining several noisy *estimates
-  of the same underlying correlation* (e.g. meta-analysis, or one endpoint's Spearman
-  averaged across repeated resamples of the same data). Macro-averaging here instead
-  combines Spearman scores from *different* endpoints — unrelated true correlations,
-  not repeated estimates of one — so that justification
-  doesn't hold. Worse, `arctanh` blows up near ±1 (`arctanh(1 - 1e-7) ≈ 8.4` vs.
-  `arctanh(0) = 0`), so a submission with a near-perfect Spearman on just one or two
-  endpoints and ~0 on the rest could macro-average to ~0.99 instead of the
-  naively-expected ~0.3 — a couple of easy/lucky endpoints dominating the whole score
-  rather than it reflecting balanced performance across the panel. `Kendall_Tau` was
-  never a candidate for this transform in the first place: Fisher's z is derived for
-  Pearson's r (and commonly extended to Spearman's rho), but that derivation doesn't
-  carry over to Kendall's tau, which has a different asymptotic sampling distribution.
+  Not a Fisher z-transform (`arctanh` → mean(z) → `tanh`): that suits combining
+  several noisy estimates of the *same* correlation, but here the endpoints are
+  different correlations, and `arctanh` blows up near ±1 (`arctanh(1 - 1e-7) ≈ 8.4`
+  vs. `arctanh(0) = 0`). A near-perfect Spearman on one or two endpoints and ~0 on the
+  rest would macro-average to ~0.99 instead of ~0.3, so a couple of easy endpoints
+  would dominate the score. (Fisher's z doesn't apply to Kendall's tau at all.)
 - **Endpoint-prefixed, then narrowed back down.** Each track's `averaged-results.parquet`
   stores *every one of that track's* endpoint stats in one wide row (e.g.
   `ENDPOINT_1_ST-RAE_mean`, `MA_ST-RAE_mean` for regression;

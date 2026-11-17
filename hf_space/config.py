@@ -1,25 +1,36 @@
-"""Configuration constants for the blind challenge HuggingFace Space.
+"""Configuration for the blind challenge Hugging Face Space.
 
-Everything a challenge author needs to customise on the Space side lives here:
-the endpoint lists / dataset sizes (which must mirror ``backend/config.py``), the
-external links, and the page-content markdown blocks. Work through every ``TODO``
-below when standing up a new challenge.
+Everything a challenge author customises on the Space side: the schedule, submission
+rules, links, tracks (which must mirror ``backend/config.py``; the drift test checks),
+what each leaderboard shows, appearance and the page text. Work through every
+``TODO`` when standing up a new challenge.
 """
 
 import os
 from dataclasses import dataclass, field
 from typing import Literal
 
-# -------------------------------- Global Params ---------------------------------------
+# ------------------------------- Phase and schedule ------------------------------------
 
-# This is updated manually to allow control over what is visible on the HF Space.
-# Possible phases:
-# 0: Pre-challenge
-# 1: Phase 1 (only live leaderboard)
-# 2: Phase 2 (live leaderboard + static interim leaderboard)
-# 3: Challenge closed, final leaderboard not yet released
-# 4: Challenge closed, final leaderboard released
+# Set by hand to control what the Space shows:
+# 0: before the challenge
+# 1: open, live leaderboard only
+# 2: open, live leaderboard and the interim leaderboard
+# 3: closed, final leaderboard not yet released
+# 4: closed, final leaderboard (and Head-to-Head tab) released
 CURRENT_PHASE = 0
+
+# TODO: this challenge's submission deadlines, as in backend/config.py (UTC, format
+# "%Y-%m-%dT%H:%M:%SZ"; the drift test checks they match). The Space uses them for
+# the status line under the header and the model report reminder.
+INTERIM_LEADERBOARD_DEADLINE = "2099-01-01T23:59:59Z"
+FINAL_LEADERBOARD_DEADLINE = "2099-12-31T23:59:59Z"
+# With REQUIRE_MODEL_REPORT, a banner reminds participants to add a model report link
+# this many days before FINAL_LEADERBOARD_DEADLINE.
+MODEL_REPORT_REMINDER_DAYS = 7
+
+# --------------------------------- Submission rules ------------------------------------
+
 HOURS_BETWEEN_SUBMISSIONS = 12
 # Only Hugging Face accounts at least this old can submit, which makes throwaway
 # accounts for dodging the cooldown less useful. 0 turns the check off.
@@ -27,34 +38,15 @@ MIN_ACCOUNT_AGE_DAYS = 1
 _MIN_ACCOUNT_AGE = (
     f"{MIN_ACCOUNT_AGE_DAYS} day{'s' if MIN_ACCOUNT_AGE_DAYS != 1 else ''}"
 )
-# Minimum standard deviation for regression predictions to be considered valid.
-# Constant columns (with or without slight noise added) can be used to game the
-# leaderboard metric.
+# Minimum standard deviation of each regression prediction column. Constant columns
+# (with or without slight noise added) can be used to game the leaderboard metric.
 MIN_PREDICTION_STD = 0.01
+# Entries on the final leaderboard must have a reachable model report link. Must
+# mirror backend.config.REQUIRE_MODEL_REPORT.
+REQUIRE_MODEL_REPORT = True
 
-# Leaderboard and S3 configuration.
-# Regression, classification, and structure are three fully independent backend
-# tracks (each with its own submissions/scores/leaderboard S3 prefix, Lambda,
-# per-track macro-average, etc.). Must mirror backend.config.TrackPaths.track.
-REGRESSION_TRACK = "regression"
-CLASSIFICATION_TRACK = "classification"
-STRUCTURE_TRACK = "structure"
+# -------------------------------------- Links ------------------------------------------
 
-# {track} is one of REGRESSION_TRACK / CLASSIFICATION_TRACK / STRUCTURE_TRACK.
-# {endpoint_slug} is MACRO_ENDPOINT_LABEL ("MA") for a track's master (macro-ranked)
-# leaderboard (only present once a track has more than one endpoint), a
-# REGRESSION_SPEC.endpoints/CLASSIFICATION_SPEC.endpoints entry (e.g.
-# "ENDPOINT_1") for that endpoint's own leaderboard, or
-# STRUCTURE_SPEC.endpoints[0] ("structure") for the structure track's one leaderboard —
-# see leaderboards.format_leaderboard_uri.
-# {version} is "latest" or an ISO timestamp.
-# Every leaderboard file (all tracks, all stages) follows this one convention — must
-# mirror backend.aws_leaderboards._leaderboard_file_path.
-LEADERBOARD_URI_FORMAT = (
-    "leaderboard/{leaderboard_type}/{track}/{endpoint_slug}_leaderboard_{version}.csv"
-)
-S3_BUCKET: str = os.environ.get("S3_BUCKET", "")
-AWS_DEFAULT_REGION: str = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 # TODO: link to this challenge's announcement blog post.
 CHALLENGE_ANNOUCEMENT_LINK = "https://<ORG-WEBSITE>/<challenge-announcement-post>"
 # TODO: link to the HuggingFace dataset holding this challenge's train/test data.
@@ -68,60 +60,37 @@ TUTORIAL_LINK = "https://github.com/<ORG>/<Challenge-Tutorial>"
 # TODO: invite link to this challenge's Discord server, or "" for no Discord button.
 DISCORD_LINK = "https://discord.gg/<invite-code>"
 
-# TODO: this challenge's submission deadlines, as in backend/config.py (UTC, format
-# "%Y-%m-%dT%H:%M:%SZ"; the drift test checks they match). The Space uses them for
-# the status line under the header and the model report reminder.
-INTERIM_LEADERBOARD_DEADLINE = "2099-01-01T23:59:59Z"
-FINAL_LEADERBOARD_DEADLINE = "2099-12-31T23:59:59Z"
-# With REQUIRE_MODEL_REPORT, a banner reminds participants to add a model report link
-# this many days before FINAL_LEADERBOARD_DEADLINE.
-MODEL_REPORT_REMINDER_DAYS = 7
+# -------------------------------------- Tracks -----------------------------------------
 
-# ---------------------------------- Appearance -----------------------------------------
+# Track names, as in S3 prefixes. Must mirror backend.config's TrackSpec.track values.
+REGRESSION_TRACK = "regression"
+CLASSIFICATION_TRACK = "classification"
+STRUCTURE_TRACK = "structure"
 
-# TODO (optional): the Space's colours. Each is a Gradio colour name ("blue", "sky",
-# "emerald", "violet", "slate", "zinc", ...) or a hex colour such as "#1f6feb", from
-# which lighter and darker shades are made. Primary is buttons and highlights,
-# secondary is accents, neutral is backgrounds, borders and text.
-THEME_PRIMARY_COLOUR = "blue"
-THEME_SECONDARY_COLOUR = "sky"
-THEME_NEUTRAL_COLOUR = "slate"
-# TODO (optional): a Google Fonts family name, e.g. "Inter", or None for Gradio's.
-THEME_FONT: str | None = None
-# TODO: add the challenge logo here (not shipped in the template). The header shows it
-# when the file exists. Relative to hf_space/.
-LOGO_PATH = "_static/challenge_logo.png"
-# A small "Built with the blind challenge template" line under every page, linking to
-# the template and its citation. Set to False to leave it out.
-SHOW_TEMPLATE_CREDIT = True
-TEMPLATE_CREDIT_MD = (
-    "Built with the OpenADMET [blind challenge template]"
-    "(https://github.com/OpenADMET/blind-challenge-template) "
-    "([cite](https://doi.org/10.5281/zenodo.22780110))"
-)
-
-# Activity bootstrap-results.parquet files hold one row per (Sample, Endpoint) pair,
-# including this synthetic pseudo-endpoint holding the multi-endpoint macro-averaged
-# scores for that bootstrap sample. Must mirror backend.config.MACRO_ENDPOINT_LABEL.
-MACRO_ENDPOINT_LABEL = "MA"
-
-# -------------------------------- Track definitions ------------------------------------
+# TODO: rename to this challenge's track labels (shown on the Submit tab and as
+# leaderboard tab titles).
+REGRESSION_NAME = "Regression Prediction"
+CLASSIFICATION_NAME = "Classification Prediction"
+STRUCTURE_NAME = "Structure Prediction"
+TRACK_NAMES: dict[str, str] = {
+    REGRESSION_TRACK: REGRESSION_NAME,
+    CLASSIFICATION_TRACK: CLASSIFICATION_NAME,
+    STRUCTURE_TRACK: STRUCTURE_NAME,
+}
 
 IDENTIFIER_COLUMNS = ["SMILES", "Molecule_Name"]
-
 # TODO: must equal backend.config.ACTIVITY_DATASET_SIZE / STRUCTURE_DATASET_SIZE
 # (the drift test checks). Regression and classification share the activity dataset.
 ACTIVITY_DATASET_SIZE = 750
 STRUCTURE_DATASET_SIZE = 184
-
-# Entries on the final leaderboard must have a reachable model report link. Must
-# mirror backend.config.REQUIRE_MODEL_REPORT.
-REQUIRE_MODEL_REPORT = True
-
+# The macro-averaged pseudo-endpoint of a multi-endpoint track: its overall
+# leaderboard. Must mirror backend.config.MACRO_ENDPOINT_LABEL.
+MACRO_ENDPOINT_LABEL = "MA"
 
 # Compound sets and leaderboard stages. Must mirror backend/config.py.
 COMPOUND_SETS = ("all", "live", "hidden")
 LEADERBOARD_STAGES = ("live", "interim", "final")
+LeaderboardStage = Literal["live", "interim", "final"]
 DEFAULT_LEADERBOARD_SETS = {"live": "live", "interim": "all", "final": "all"}
 
 
@@ -236,102 +205,10 @@ TRACK_SPECS: dict[str, TrackSpec] = {
     spec.track: spec for spec in (REGRESSION_SPEC, CLASSIFICATION_SPEC, STRUCTURE_SPEC)
 }
 
-# TODO: rename to this challenge's track labels (shown on the Submit tab and as
-# leaderboard tab titles).
-REGRESSION_NAME = "Regression Prediction"
-CLASSIFICATION_NAME = "Classification Prediction"
-STRUCTURE_NAME = "Structure Prediction"
-TRACK_NAMES: dict[str, str] = {
-    REGRESSION_TRACK: REGRESSION_NAME,
-    CLASSIFICATION_TRACK: CLASSIFICATION_NAME,
-    STRUCTURE_TRACK: STRUCTURE_NAME,
-}
-
 REQUIRED_REGRESSION_COLUMNS = IDENTIFIER_COLUMNS + REGRESSION_SPEC.endpoints
 REQUIRED_CLASSIFICATION_COLUMNS = IDENTIFIER_COLUMNS + CLASSIFICATION_SPEC.endpoints
 
-# How each metric (or extra column, without its "_mean") is labelled on the
-# leaderboards; one not listed is shown under its own name.
-METRIC_DISPLAY_NAMES: dict[str, str] = {
-    "R2": "R²",
-    "Spearman_R": "Spearman's ρ",
-    "Kendall_Tau": "Kendall's τ",
-    "F1": "F1 Score",
-    "coverage": "Coverage",
-}
-# Whether a higher value of each metric (or extra column) is better, for the ↑/↓
-# in the leaderboard headers. A metric not listed gets no arrow; a track's primary
-# metric uses its TrackSpec.higher_is_better.
-METRIC_HIGHER_IS_BETTER: dict[str, bool] = {
-    "ST-RAE": False,
-    "MAE": False,
-    "R2": True,
-    "Spearman_R": True,
-    "Kendall_Tau": True,
-    "MCC": True,
-    "Accuracy": True,
-    "Precision": True,
-    "Recall": True,
-    "F1": True,
-    "LDDT-PLI": True,
-    "BiSyRMSD": False,
-    "LDDT-LP": True,
-    "coverage": True,
-}
-
-
-def metric_display_names(spec: TrackSpec) -> dict[str, str]:
-    """Map a track's metric names to their leaderboard labels, in display order.
-
-    Parameters
-    ----------
-    spec : TrackSpec
-        The track.
-
-    Returns
-    -------
-    dict[str, str]
-        Metric name to label, in ``spec.metrics`` order.
-
-    """
-    return {m: METRIC_DISPLAY_NAMES.get(m, m) for m in spec.metrics}
-
-
-# ---------------------------------- Head-to-head ---------------------------------------
-
-# The Head-to-Head tab (phase 4 only) compares two final-leaderboard entrants on every
-# test compound, from release files written by scripts/final_leaderboard.ipynb
-# (backend/head_to_head_release.py). Set to False to leave the tab out.
-HEAD_TO_HEAD_ENABLED = True
-# Which per-compound views each track gets: "regression" (predicted vs measured, and
-# who is closer), "classification" (agreement grid and confusion matrices) or
-# "structure" (per-compound score bars). A track not listed has no head-to-head.
-HEAD_TO_HEAD_KINDS: dict[str, Literal["regression", "classification", "structure"]] = {
-    REGRESSION_TRACK: "regression",
-    CLASSIFICATION_TRACK: "classification",
-    STRUCTURE_TRACK: "structure",
-}
-# Where the release files are ({file}: ground_truth, entries, pairwise, bootstrap,
-# predictions or per_compound). Must mirror backend.config.TrackPaths.head_to_head.
-HEAD_TO_HEAD_URI_FORMAT = "leaderboard/final/{track}/head_to_head/{file}.parquet"
-# Development only: read the release files from {H2H_LOCAL_DIR}/{track}/{file}.parquet.
-H2H_LOCAL_DIR: str = os.environ.get("H2H_LOCAL_DIR", "")
-
-# ---------------------------------- Track visibility ----------------------------------
-
-LeaderboardStage = Literal["live", "interim", "final"]
-
-# Significant figures for scores on each leaderboard stage. The live leaderboard shows
-# fewer, so it gives away less about the test set while the challenge is running.
-LEADERBOARD_SIG_FIGS: dict[LeaderboardStage, int] = {
-    "live": 2,
-    "interim": 3,
-    "final": 3,
-}
-# Stages whose scores are also rounded in the data the Space sends (the values the
-# table sorts by, and the CSV download), so full-precision scores never reach the
-# browser. On other stages only the text shown is rounded.
-ROUNDED_STAGES: tuple[LeaderboardStage, ...] = ("live",)
+# --------------------------------- Track visibility ------------------------------------
 
 
 @dataclass(frozen=True)
@@ -385,7 +262,123 @@ TRACK_VISIBILITY: dict[str, TrackVisibility] = {
     ),
 }
 
-# ------------------------------- Useful functions -------------------------------------
+# ------------------------------- Leaderboard display -----------------------------------
+
+# How each metric (or extra column, without its "_mean") is labelled on the
+# leaderboards; one not listed is shown under its own name.
+METRIC_DISPLAY_NAMES: dict[str, str] = {
+    "R2": "R²",
+    "Spearman_R": "Spearman's ρ",
+    "Kendall_Tau": "Kendall's τ",
+    "F1": "F1 Score",
+    "coverage": "Coverage",
+}
+# Whether a higher value of each metric (or extra column) is better, for the ↑/↓
+# in the leaderboard headers. A metric not listed gets no arrow; a track's primary
+# metric uses its TrackSpec.higher_is_better.
+METRIC_HIGHER_IS_BETTER: dict[str, bool] = {
+    "ST-RAE": False,
+    "MAE": False,
+    "R2": True,
+    "Spearman_R": True,
+    "Kendall_Tau": True,
+    "MCC": True,
+    "Accuracy": True,
+    "Precision": True,
+    "Recall": True,
+    "F1": True,
+    "LDDT-PLI": True,
+    "BiSyRMSD": False,
+    "LDDT-LP": True,
+    "coverage": True,
+}
+
+
+def metric_display_names(spec: TrackSpec) -> dict[str, str]:
+    """Map a track's metric names to their leaderboard labels, in display order.
+
+    Parameters
+    ----------
+    spec : TrackSpec
+        The track.
+
+    Returns
+    -------
+    dict[str, str]
+        Metric name to label, in ``spec.metrics`` order.
+
+    """
+    return {m: METRIC_DISPLAY_NAMES.get(m, m) for m in spec.metrics}
+
+
+# Significant figures for scores on each leaderboard stage. The live leaderboard shows
+# fewer, so it gives away less about the test set while the challenge is running.
+LEADERBOARD_SIG_FIGS: dict[LeaderboardStage, int] = {
+    "live": 2,
+    "interim": 3,
+    "final": 3,
+}
+# Stages whose scores are also rounded in the data the Space sends (the values the
+# table sorts by, and the CSV download), so full-precision scores never reach the
+# browser. On other stages only the text shown is rounded.
+ROUNDED_STAGES: tuple[LeaderboardStage, ...] = ("live",)
+
+# ---------------------------------- Head-to-head ---------------------------------------
+
+# The Head-to-Head tab (phase 4 only) compares two final-leaderboard entrants on every
+# test compound, from release files written by scripts/final_leaderboard.ipynb
+# (backend/head_to_head_release.py). Set to False to leave the tab out.
+HEAD_TO_HEAD_ENABLED = True
+# Which per-compound views each track gets: "regression" (predicted vs measured, and
+# who is closer), "classification" (agreement grid and confusion matrices) or
+# "structure" (per-compound score bars). A track not listed has no head-to-head.
+HEAD_TO_HEAD_KINDS: dict[str, Literal["regression", "classification", "structure"]] = {
+    REGRESSION_TRACK: "regression",
+    CLASSIFICATION_TRACK: "classification",
+    STRUCTURE_TRACK: "structure",
+}
+# Where the release files are ({file}: ground_truth, entries, pairwise, bootstrap,
+# predictions or per_compound). Must mirror backend.config.TrackPaths.head_to_head.
+HEAD_TO_HEAD_URI_FORMAT = "leaderboard/final/{track}/head_to_head/{file}.parquet"
+# Development only: read the release files from {H2H_LOCAL_DIR}/{track}/{file}.parquet.
+H2H_LOCAL_DIR: str = os.environ.get("H2H_LOCAL_DIR", "")
+
+# ----------------------------------- Appearance ----------------------------------------
+
+# TODO (optional): the Space's colours. Each is a Gradio colour name ("blue", "sky",
+# "emerald", "violet", "slate", "zinc", ...) or a hex colour such as "#1f6feb", from
+# which lighter and darker shades are made. Primary is buttons and highlights,
+# secondary is accents, neutral is backgrounds, borders and text.
+THEME_PRIMARY_COLOUR = "blue"
+THEME_SECONDARY_COLOUR = "sky"
+THEME_NEUTRAL_COLOUR = "slate"
+# TODO (optional): a Google Fonts family name, e.g. "Inter", or None for Gradio's.
+THEME_FONT: str | None = None
+# TODO: add the challenge logo here (not shipped in the template). The header shows it
+# when the file exists. Relative to hf_space/.
+LOGO_PATH = "_static/challenge_logo.png"
+# A small "Built with the blind challenge template" line under every page, linking to
+# the template and its citation. Set to False to leave it out.
+SHOW_TEMPLATE_CREDIT = True
+TEMPLATE_CREDIT_MD = (
+    "Built with the OpenADMET [blind challenge template]"
+    "(https://github.com/OpenADMET/blind-challenge-template) "
+    "([cite](https://doi.org/10.5281/zenodo.22780110))"
+)
+
+# --------------------------------------- S3 --------------------------------------------
+
+S3_BUCKET: str = os.environ.get("S3_BUCKET", "")
+AWS_DEFAULT_REGION: str = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+# Where the backend writes each leaderboard: {leaderboard_type} is the stage, {track}
+# the track, {endpoint_slug} an endpoint or MACRO_ENDPOINT_LABEL, and {version}
+# "latest" or a timestamp. Must mirror backend.aws_leaderboards._leaderboard_file_path
+# (the drift test checks).
+LEADERBOARD_URI_FORMAT = (
+    "leaderboard/{leaderboard_type}/{track}/{endpoint_slug}_leaderboard_{version}.csv"
+)
+
+# ------------------------- Submission file formats (page text) -------------------------
 
 
 def _submission_schema_row(column: str, dtype: str, description: str) -> str:

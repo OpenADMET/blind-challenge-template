@@ -738,20 +738,12 @@ def test_load_structure_ground_truth_builds_correct_args(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Structure track: score_structure_submission
+# Structure track: aggregate_structure_scores
 # ---------------------------------------------------------------------------
 
 
-def test_score_structure_submission_all_set_no_filtering(monkeypatch):
-    """Phase 0 scores every compound and coverage_mean reflects the full set."""
-    per_compound = pd.DataFrame(
-        {"Molecule_Name": ["a", "b", "c"], "coverage": [1.0, 0.5, 0.0]}
-    )
-    monkeypatch.setattr(
-        asp,
-        "score_structure_predictions",
-        lambda predicted, gt, smiles_map=None: (per_compound, {}),
-    )
+def _fake_aggregation(monkeypatch):
+    """Make bootstrapping and averaging trivial, to test filtering and coverage."""
     monkeypatch.setattr(
         asp, "bootstrap_structure_metrics", lambda df, n: pd.DataFrame({"dummy": [1]})
     )
@@ -762,73 +754,34 @@ def test_score_structure_submission_all_set_no_filtering(monkeypatch):
     )
     monkeypatch.setattr(asp, "pivot_endpoint_results_wide", lambda df: df)
 
-    result_per_compound, _bootstrap_df, averaged_df, _pb_failures = (
-        asp.score_structure_submission(
-            predicted={}, compound_set="all", ground_truth={}, identifiers=None
-        )
+
+def test_aggregate_structure_scores_all_set_no_filtering(monkeypatch):
+    """The "all" set keeps every compound and coverage_mean reflects them all."""
+    _fake_aggregation(monkeypatch)
+    per_compound = pd.DataFrame(
+        {"Molecule_Name": ["a", "b", "c"], "coverage": [1.0, 0.5, 0.0]}
     )
-    assert len(result_per_compound) == 3
+    result, _bootstrap_df, averaged_df = asp.aggregate_structure_scores(
+        per_compound, "all"
+    )
+    assert len(result) == 3
     assert averaged_df["coverage_mean"].iloc[0] == pytest.approx(0.5)
 
 
-def test_score_structure_submission_live_set_filters_by_isin(monkeypatch):
+def test_aggregate_structure_scores_live_set_filters(monkeypatch):
     """The live set narrows per-compound results to the live compounds."""
+    _fake_aggregation(monkeypatch)
     per_compound = pd.DataFrame(
         {"Molecule_Name": ["a", "b", "c"], "coverage": [1.0, 1.0, 0.0]}
     )
     identifiers = pd.DataFrame(
         {"Molecule_Name": ["a", "b", "c"], "set": ["live", "hidden", "live"]}
     )
-    monkeypatch.setattr(
-        asp,
-        "score_structure_predictions",
-        lambda predicted, gt, smiles_map=None: (per_compound, {}),
+    result, _bootstrap_df, averaged_df = asp.aggregate_structure_scores(
+        per_compound, "live", identifiers
     )
-    monkeypatch.setattr(
-        asp, "bootstrap_structure_metrics", lambda df, n: pd.DataFrame({"dummy": [1]})
-    )
-    monkeypatch.setattr(
-        asp,
-        "average_bootstrap_results_by_endpoint",
-        lambda df: pd.DataFrame({"metric_mean": [0.9]}),
-    )
-    monkeypatch.setattr(asp, "pivot_endpoint_results_wide", lambda df: df)
-
-    result_per_compound, _bootstrap_df, averaged_df, _pb_failures = (
-        asp.score_structure_submission(
-            predicted={}, compound_set="live", ground_truth={}, identifiers=identifiers
-        )
-    )
-    assert set(result_per_compound["Molecule_Name"]) == {"a", "c"}
+    assert set(result["Molecule_Name"]) == {"a", "c"}
     assert averaged_df["coverage_mean"].iloc[0] == pytest.approx(0.5)
-
-
-def test_score_structure_submission_loads_ground_truth_when_not_provided(monkeypatch):
-    """A None ground_truth is loaded via load_structure_ground_truth."""
-    captured = {}
-    monkeypatch.setattr(
-        asp, "load_structure_ground_truth", lambda: (Path("/gt"), {"loaded": "gt"})
-    )
-
-    def fake_score(predicted, gt, smiles_map=None):
-        captured["gt"] = gt
-        return pd.DataFrame({"Molecule_Name": ["a"], "coverage": [1.0]}), {}
-
-    monkeypatch.setattr(asp, "score_structure_predictions", fake_score)
-    monkeypatch.setattr(
-        asp, "bootstrap_structure_metrics", lambda df, n: pd.DataFrame({"dummy": [1]})
-    )
-    monkeypatch.setattr(
-        asp,
-        "average_bootstrap_results_by_endpoint",
-        lambda df: pd.DataFrame({"metric_mean": [0.9]}),
-    )
-    monkeypatch.setattr(asp, "pivot_endpoint_results_wide", lambda df: df)
-
-    asp.score_structure_submission(
-        predicted={}, compound_set="all", ground_truth=None, identifiers=None
-    )
-    assert captured["gt"] == {"loaded": "gt"}
 
 
 # ---------------------------------------------------------------------------
@@ -965,38 +918,28 @@ def _fake_single_structure_scores(monkeypatch, calls: list[str]):
 
 
 def test_aggregating_once_scored_compounds_matches_scoring_per_set(monkeypatch):
-    """Per-set outputs are unchanged by scoring once and re-aggregating."""
+    """Scoring every compound once and filtering per set gives the same scores as
+    scoring only that set's compounds."""
     calls: list[str] = []
     _fake_single_structure_scores(monkeypatch, calls)
     predicted = {f"mol{i}": f"/pred/mol{i}.pdb" for i in range(1, 7)}
     ground_truth = {f"mol{i}": f"/gt/mol{i}.pdb" for i in range(1, 7)}
-    identifiers = pd.DataFrame(
-        {
-            "Molecule_Name": list(predicted),
-            "set": ["live", "hidden", "live", "hidden", "live", "hidden"],
-        }
-    )
+    sets = ["live", "hidden", "live", "hidden", "live", "hidden"]
+    identifiers = pd.DataFrame({"Molecule_Name": list(predicted), "set": sets})
 
-    sets = ["all", "live", "hidden"]
-    per_set = {
-        compound_set: asp.score_structure_submission(
-            predicted, compound_set, ground_truth=ground_truth, identifiers=identifiers
-        )
-        for compound_set in sets
-    }
-    assert len(calls) == 18  # the old way: every compound scored for each set
-
-    calls.clear()
     all_scores, _ = asp.score_structure_predictions(predicted, ground_truth)
-    for compound_set in sets:
-        per_compound, bootstrap_df, averaged_df = asp.aggregate_structure_scores(
-            all_scores, compound_set, identifiers
+    assert len(calls) == 6  # every compound scored once
+    for compound_set in ["live", "hidden"]:
+        in_set = {m for m, s in zip(predicted, sets) if s == compound_set}
+        set_scores, _ = asp.score_structure_predictions(
+            {m: p for m, p in predicted.items() if m in in_set}, ground_truth
         )
-        expected = per_set[compound_set]
-        pd.testing.assert_frame_equal(per_compound, expected[0])
-        pd.testing.assert_frame_equal(bootstrap_df, expected[1])
-        pd.testing.assert_frame_equal(averaged_df, expected[2])
-    assert len(calls) == 6  # the new way: every compound scored once
+        expected = asp.aggregate_structure_scores(set_scores, "all")
+        actual = asp.aggregate_structure_scores(all_scores, compound_set, identifiers)
+        for got, want in zip(actual, expected):
+            pd.testing.assert_frame_equal(
+                got.reset_index(drop=True), want.reset_index(drop=True)
+            )
 
     live = asp.aggregate_structure_scores(all_scores, "live", identifiers)[0]
     assert list(live["Molecule_Name"]) == ["mol1", "mol3", "mol5"]

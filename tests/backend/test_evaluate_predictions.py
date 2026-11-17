@@ -44,8 +44,7 @@ def test_score_activity_predictions(
     """Test scoring of activity predictions — no macro pseudo-endpoint included.
 
     score_activity_predictions scores whichever endpoints it's given, using each
-    endpoint's own metric list — the macro "MA" row is no longer computed here (see
-    add_macro_endpoint). Passing the full combined ACTIVITY_ENDPOINTS list here
+    endpoint's own metric list; the macro "MA" row comes from add_macro_endpoint. Passing the full combined ACTIVITY_ENDPOINTS list here
     exercises both metric-dispatch branches in one call; a real regression or
     classification submission would instead pass only its own track's endpoints.
     """
@@ -335,15 +334,10 @@ def test_compute_macro_bootstrap_results_matches_fixture(
 
 
 def test_compute_macro_bootstrap_results_metric_semantics():
-    """Check every metric — including Spearman_R — is a plain arithmetic mean.
+    """Every metric, Spearman_R included, is a plain arithmetic mean across endpoints.
 
-    Spearman_R previously used a Fisher z-transform (arctanh/tanh), the standard
-    treatment for combining several noisy estimates of the *same* correlation. That
-    doesn't apply to macro-averaging across different endpoints (unrelated true
-    correlations): arctanh blows up near +/-1, so a submission with a
-    near-perfect Spearman on one endpoint and ~0 on the rest could macro-average to
-    ~0.99 instead of the expected ~0.33 — a couple of easy/lucky endpoints dominating
-    the score. So Spearman_R now gets a plain mean like every other metric.
+    A Fisher z-transform would let a near-perfect Spearman on one endpoint dominate:
+    ~0.99 instead of the expected ~0.33 here.
     """
     raw = pd.DataFrame(
         {

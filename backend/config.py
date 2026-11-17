@@ -1,9 +1,9 @@
-"""Configuration file for the blind challenge.
+"""Backend configuration for the blind challenge.
 
-This module is the single source of truth for the challenge's endpoints, dataset
-sizes, deadlines, and metrics. When standing up a new challenge from this
-template, work through every ``TODO`` below and keep ``hf_space/config.py`` in
-sync with the endpoint lists / dataset sizes set here.
+The single source of truth for the challenge's deadlines, datasets, scoring and
+tracks, and the S3 layout. When standing up a new challenge, work through every
+``TODO`` and keep ``hf_space/config.py`` in step (``tests/backend/test_config_drift.py``
+checks the settings both sides share).
 """
 
 import os
@@ -24,93 +24,38 @@ from sklearn.metrics import (
 
 from .custom_scoring_functions import rae_soft_threshold_absolute_error
 
-# Challenge information
+# -------------------------------- Challenge settings --------------------------------
+
 # TODO: set these to this challenge's real cutoffs. Format must stay
 # "%Y-%m-%dT%H:%M:%SZ" (UTC). Submissions after INTERIM_LEADERBOARD_DEADLINE are
 # excluded from the interim leaderboard; after FINAL_LEADERBOARD_DEADLINE, from
 # the final leaderboard. The 2099 values below are placeholders.
 INTERIM_LEADERBOARD_DEADLINE = "2099-01-01T23:59:59Z"
 FINAL_LEADERBOARD_DEADLINE = "2099-12-31T23:59:59Z"
+# Drop entries without a reachable model report link from the final leaderboard.
+# Must mirror hf_space.config.REQUIRE_MODEL_REPORT.
+REQUIRE_MODEL_REPORT = True
 
-# Multi-endpoint macro-averaging (see evaluate_predictions.compute_macro_bootstrap_results).
-# A pseudo-endpoint, scored alongside the real endpoints in every bootstrap sample, whose
-# per-metric values are macro-averages across endpoints rather than raw per-endpoint scores.
-MACRO_ENDPOINT_LABEL = "MA"
+# ------------------------------------- Datasets -------------------------------------
 
-# AWS S3 configuration
-S3_BUCKET: str = os.environ.get("S3_BUCKET", "blind-challenge-template")
-
-# Discord notifications — set DISCORD_NOTIFICATIONS=0 to disable
-DISCORD_NOTIFICATIONS: bool = os.environ.get("DISCORD_NOTIFICATIONS", "1") != "0"
-
-# Activity dataset: the compounds the regression and classification tracks share.
-IDENTIFIER_COLUMNS = ["SMILES", "Molecule_Name"]
-REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX = "_conf_high"
-REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX = "_conf_low"
-ENDPOINTS_TO_LOG_TRANSFORM: list[str] = []
+# Activity: the compounds the regression and classification tracks share.
 # TODO: set to the number of compounds in this challenge's activity test set.
 ACTIVITY_DATASET_SIZE = 750
-# Rank correlations (Spearman_R, Kendall_Tau) are mathematically undefined — scipy
-# returns NaN, not an exception — whenever a bootstrap sample has zero variance in
-# y_pred (e.g. a submission that predicts the same value for every compound) or
-# y_true. That's a legitimate, if uninformative, submission rather than a computation
-# error, so bootstrap_metrics substitutes this fallback instead of raising. 0.0 is the
-# "no correlation" value on both metrics' [-1, 1] scale, matching how an
-# unconditionally-constant predictor should be scored: no better than chance, not a
-# hard failure. Metrics not listed here still raise on a non-finite value (see
-# bootstrap_metrics) since for e.g. MAE/RAE/R2 that would indicate a real bug rather
-# than a valid degenerate submission.
-METRIC_NAN_FALLBACK: dict[str, float] = {
-    "Spearman_R": 0.0,
-    "Kendall_Tau": 0.0,
-}
-# Scoring function for each activity metric name a TrackSpec can list. Structure
-# metrics are computed by OpenStructure per compound, so they have no entry here.
-# zero_division=0 matches sklearn's degenerate-case default, avoiding errors on
-# bootstrap resamples with no positive predictions; matthews_corrcoef already
-# returns 0.0 in that case.
-METRIC_FUNCTIONS: dict[str, Callable] = {
-    "ST-RAE": rae_soft_threshold_absolute_error,
-    "MAE": mean_absolute_error,
-    "R2": r2_score,
-    "Spearman_R": spearmanr,
-    "Kendall_Tau": kendalltau,
-    "MCC": matthews_corrcoef,
-    "Accuracy": accuracy_score,
-    "Precision": partial(precision_score, zero_division=0),
-    "Recall": partial(recall_score, zero_division=0),
-    "F1": partial(f1_score, zero_division=0),
-}
-# Number of bootstrap resamples per submission. Samples are drawn once, at scoring
-# time, with a fixed seed (utils.BOOTSTRAP_SEED), and pairwise comparisons join two
-# submissions' samples on their "Sample" index. Fix B before the challenge opens and
-# never change it while it runs: submissions scored with different B would be
-# compared on different resample sets. The smallest attainable two-sided p-value
-# is 2 / (B + 1).
-#
-# 10,000 (#11, 11-18): at 1,000, a p-value near the Benjamini-Hochberg cut-offs of a
-# large leaderboard varied by up to 5x between seeds, so boundary tier decisions were
-# partly chance; 10,000 cuts that noise about 3x and lowers the p-value floor to
-# 0.0002. It costs ~70 s per classification scoring run (~35 s regression) on a
-# laptop, well inside the evaluators' 900 s, files under 1 MB, and a few seconds
-# more for the pairwise comparisons. Tests score with 1,000
-# (tests/backend/backend_test_settings.py).
-BOOTSTRAP_SAMPLES = 10000
+IDENTIFIER_COLUMNS = ["SMILES", "Molecule_Name"]
+# Columns holding each regression endpoint's credible interval in the ground truth.
+REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX = "_conf_high"
+REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX = "_conf_low"
+# Endpoints scored on log-transformed values.
+ENDPOINTS_TO_LOG_TRANSFORM: list[str] = []
 
-# Structure dataset
+# Structure.
 # TODO: set to the number of compounds in this challenge's structure test set
 # (0 / unused if this challenge has no structure track).
 STRUCTURE_DATASET_SIZE = 184
-# Penalty applied to BiSyRMSD when OST cannot match the ligand (lower is better,
-# so a large value is used; 20 Å is well outside any reasonable binding-site RMSD)
-BISYRMSD_NAN_PENALTY: float = 20.0
-# Worst-case scores returned for a pose that fails the PoseBusters filter. LDDT values
-# floor at 0; BiSyRMSD uses the same penalty as an unscored structure so its contribution
-# to the bootstrap mean is identically bad.
-POSEBUSTERS_MAX_FAILURES: int = 0
 # TODO: filename of the reference protein structure in the ground-truth data.
 PROTEIN_DATA_FILE = "protein_structure.pdb"
 
+# ----------------------- Compound sets and leaderboard stages -----------------------
 
 # Compound sets, from the "set" column of a dataset's identifiers parquet: "live"
 # compounds, "hidden" compounds, and "all" of them.
@@ -135,6 +80,54 @@ def scores_uri_column(compound_set: str) -> str:
 
     """
     return f"{compound_set}_scores_uri"
+
+
+# ------------------------------------- Scoring --------------------------------------
+
+# Scoring function for each activity metric a TrackSpec can list (structure metrics
+# come from OpenStructure). zero_division=0 scores a resample with no positive
+# predictions as 0 instead of warning.
+METRIC_FUNCTIONS: dict[str, Callable] = {
+    "ST-RAE": rae_soft_threshold_absolute_error,
+    "MAE": mean_absolute_error,
+    "R2": r2_score,
+    "Spearman_R": spearmanr,
+    "Kendall_Tau": kendalltau,
+    "MCC": matthews_corrcoef,
+    "Accuracy": accuracy_score,
+    "Precision": partial(precision_score, zero_division=0),
+    "Recall": partial(recall_score, zero_division=0),
+    "F1": partial(f1_score, zero_division=0),
+}
+# Value used when a metric is undefined for a bootstrap sample. Rank correlations
+# are NaN when predictions (or truth) have zero variance, e.g. a constant predictor:
+# score that as no correlation rather than failing. Any other metric returning a
+# non-finite value is a bug, so bootstrap_metrics raises.
+METRIC_NAN_FALLBACK: dict[str, float] = {
+    "Spearman_R": 0.0,
+    "Kendall_Tau": 0.0,
+}
+# Multi-endpoint macro-averaging (see evaluate_predictions.compute_macro_bootstrap_results).
+# A pseudo-endpoint, scored alongside the real endpoints in every bootstrap sample, whose
+# per-metric values are macro-averages across endpoints rather than raw per-endpoint scores.
+MACRO_ENDPOINT_LABEL = "MA"
+
+# Bootstrap resamples per submission (B), drawn once at scoring time with a fixed
+# seed; pairwise comparisons join two submissions' samples on "Sample". Never change
+# it while a challenge runs. The smallest two-sided p-value is 2 / (B + 1). At 1,000,
+# p-values near the significance cut-offs varied up to 5x between seeds; 10,000 cuts
+# that about 3x for ~70 s of scoring per classification run (#11). Tests score with
+# 1,000 (tests/backend/backend_test_settings.py).
+BOOTSTRAP_SAMPLES = 10000
+
+# BiSyRMSD (Å) given when OST can't match the ligand: far worse than any real pose.
+BISYRMSD_NAN_PENALTY: float = 20.0
+# How many PoseBusters checks a pose may fail before it gets worst-case scores
+# (LDDT 0, BiSyRMSD the penalty above).
+POSEBUSTERS_MAX_FAILURES: int = 0
+
+
+# -------------------------------------- Tracks --------------------------------------
 
 
 @dataclass(frozen=True)
@@ -284,9 +277,12 @@ TRACK_SPECS: dict[str, TrackSpec] = {
     spec.track: spec for spec in (REGRESSION_SPEC, CLASSIFICATION_SPEC, STRUCTURE_SPEC)
 }
 
-# Drop entries without a reachable model report link from the final leaderboard.
-# Must mirror hf_space.config.REQUIRE_MODEL_REPORT.
-REQUIRE_MODEL_REPORT = True
+
+# --------------------------- S3 layout and notifications ----------------------------
+
+S3_BUCKET: str = os.environ.get("S3_BUCKET", "blind-challenge-template")
+# Set DISCORD_NOTIFICATIONS=0 to turn off Discord notifications.
+DISCORD_NOTIFICATIONS: bool = os.environ.get("DISCORD_NOTIFICATIONS", "1") != "0"
 
 # Ground-truth and cross-track entries-list S3 prefixes, shared by every track.
 GROUND_TRUTH_PREFIX = "ground_truth"
