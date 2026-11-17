@@ -9,7 +9,7 @@ bucket are dry runs unless given `--execute`, and take the bucket from `--bucket
 | Script | When | What |
 |---|---|---|
 | `interim_leaderboard.ipynb` | After `INTERIM_LEADERBOARD_DEADLINE` | Builds, checks and publishes the interim leaderboards |
-| `final_leaderboard.ipynb` | After `FINAL_LEADERBOARD_DEADLINE` | The same for the final leaderboards; also lists who was dropped (e.g. for a missing model report) |
+| `final_leaderboard.ipynb` | After `FINAL_LEADERBOARD_DEADLINE` | The same for the final leaderboards; also lists who was dropped (e.g. for a missing model report), then writes the Head-to-Head tab's release files |
 | `quarantine_submissions.py` | When entries must come off the leaderboard | Moves their manifests to `quarantine/`, reversibly ([docs/removing-entries.md](../docs/removing-entries.md)) |
 | `manage_bans.py` | To ban or reinstate an account | Edits the ban list the Space reads ([docs/bans.md](../docs/bans.md)) |
 
@@ -30,6 +30,10 @@ Each runs four steps, one cell each (the code is in `leaderboard_release.py` and
 4. **Upload**, behind an `assert False` so "Run all" can't publish by accident. Nothing
    is uploaded if a check blocked or any board failed to build, so the Space never
    shows a partial set.
+
+The final notebook then **releases the head-to-head files**: the ground truth and every
+final entrant's predictions and scores, identified by rank, for the Space's Head-to-Head
+tab. This is refused before `FINAL_LEADERBOARD_DEADLINE`.
 
 They end with what to do next: set `CURRENT_PHASE` in `hf_space/config.py`, check
 the Space locally and on the testing Space, then deploy.

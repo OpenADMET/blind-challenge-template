@@ -91,6 +91,14 @@ THEME_FONT: str | None = None
 # TODO: add the challenge logo here (not shipped in the template). The header shows it
 # when the file exists. Relative to hf_space/.
 LOGO_PATH = "_static/challenge_logo.png"
+# A small "Built with the blind challenge template" line under every page, linking to
+# the template and its citation. Set to False to leave it out.
+SHOW_TEMPLATE_CREDIT = True
+TEMPLATE_CREDIT_MD = (
+    "Built with the OpenADMET [blind challenge template]"
+    "(https://github.com/OpenADMET/blind-challenge-template) "
+    "([cite](https://doi.org/10.5281/zenodo.22780110))"
+)
 
 # Activity bootstrap-results.parquet files hold one row per (Sample, Endpoint) pair,
 # including this synthetic pseudo-endpoint holding the multi-endpoint macro-averaged
@@ -288,6 +296,26 @@ def metric_display_names(spec: TrackSpec) -> dict[str, str]:
     """
     return {m: METRIC_DISPLAY_NAMES.get(m, m) for m in spec.metrics}
 
+
+# ---------------------------------- Head-to-head ---------------------------------------
+
+# The Head-to-Head tab (phase 4 only) compares two final-leaderboard entrants on every
+# test compound, from release files written by scripts/final_leaderboard.ipynb
+# (backend/head_to_head_release.py). Set to False to leave the tab out.
+HEAD_TO_HEAD_ENABLED = True
+# Which per-compound views each track gets: "regression" (predicted vs measured, and
+# who is closer), "classification" (agreement grid and confusion matrices) or
+# "structure" (per-compound score bars). A track not listed has no head-to-head.
+HEAD_TO_HEAD_KINDS: dict[str, Literal["regression", "classification", "structure"]] = {
+    REGRESSION_TRACK: "regression",
+    CLASSIFICATION_TRACK: "classification",
+    STRUCTURE_TRACK: "structure",
+}
+# Where the release files are ({file}: ground_truth, entries, pairwise, bootstrap,
+# predictions or per_compound). Must mirror backend.config.TrackPaths.head_to_head.
+HEAD_TO_HEAD_URI_FORMAT = "leaderboard/final/{track}/head_to_head/{file}.parquet"
+# Development only: read the release files from {H2H_LOCAL_DIR}/{track}/{file}.parquet.
+H2H_LOCAL_DIR: str = os.environ.get("H2H_LOCAL_DIR", "")
 
 # ---------------------------------- Track visibility ----------------------------------
 

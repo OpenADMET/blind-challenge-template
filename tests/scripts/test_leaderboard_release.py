@@ -3,6 +3,7 @@
 import pandas as pd
 import pytest
 
+from backend.aws_leaderboards import TrackLeaderboards
 from backend.config import MACRO_ENDPOINT_LABEL
 from scripts import leaderboard_release as release
 from scripts.leaderboard_checks import CheckResult
@@ -12,8 +13,13 @@ from test_leaderboard_checks import _board
 
 def _built():
     return {
-        "regression": {MACRO_ENDPOINT_LABEL: _board(), "ENDPOINT_1": _board()},
-        "structure": {"structure": pd.DataFrame()},
+        "regression": TrackLeaderboards(
+            {MACRO_ENDPOINT_LABEL: _board(), "ENDPOINT_1": _board()},
+            master_slug=MACRO_ENDPOINT_LABEL,
+        ),
+        "structure": TrackLeaderboards(
+            {"structure": pd.DataFrame()}, master_slug="structure"
+        ),
     }
 
 
@@ -26,8 +32,10 @@ def test_build_skips_tracks_without_endpoints(monkeypatch):
     calls = []
     monkeypatch.setattr(
         release,
-        "create_track_leaderboards",
-        lambda paths, stage: calls.append((paths.spec.track, stage)) or {},
+        "build_track_leaderboards",
+        lambda paths, stage: (
+            calls.append((paths.spec.track, stage)) or TrackLeaderboards({})
+        ),
     )
     built = release.build("interim")
     expected = [t for t, p in release.TRACK_PATHS.items() if p.spec.endpoints]
@@ -85,7 +93,7 @@ def test_upload_refuses_after_a_blocker():
 
 def test_upload_refuses_a_partial_set():
     built = _built()
-    built["regression"]["ENDPOINT_1"] = None
+    built["regression"].leaderboards["ENDPOINT_1"] = None
     with pytest.raises(RuntimeError, match="failed to build"):
         release.upload(
             "final",
@@ -93,3 +101,23 @@ def test_upload_refuses_a_partial_set():
             CheckResult(),
             save=lambda *a, **k: pytest.fail("nothing may be uploaded"),
         )
+
+
+def test_release_head_to_head_skips_empty_tracks(monkeypatch, capsys):
+    released = []
+    monkeypatch.setattr(release, "load_activity_ground_truth", lambda: pd.DataFrame())
+    monkeypatch.setattr(release, "load_track_identifiers", lambda paths: pd.DataFrame())
+    monkeypatch.setattr(
+        release,
+        "build_head_to_head_release",
+        lambda paths, boards, identifiers, ground_truth: {"track": paths.track},
+    )
+
+    def _save(paths, files, force):
+        released.append((paths.track, force))
+        return [f"s3://b/{paths.track}"]
+
+    monkeypatch.setattr(release, "save_head_to_head_release", _save)
+    assert release.release_head_to_head(_built(), force=True) == ["s3://b/regression"]
+    assert released == [("regression", True)]
+    assert "skip" in capsys.readouterr().out

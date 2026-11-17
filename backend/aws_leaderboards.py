@@ -1,5 +1,6 @@
 """Leaderboard generation (ranking, significance testing) from S3 manifest."""
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, cast
 
@@ -357,6 +358,58 @@ def _build_leaderboard(
     endpoint: str,
     additional_columns: list[str],
 ) -> pd.DataFrame:
+    """Build one endpoint's leaderboard DataFrame; see ``_build_final_leaderboard``.
+
+    Parameters
+    ----------
+    manifest : pd.DataFrame
+        See ``_build_final_leaderboard``.
+    averaged_scores : dict[int, pd.DataFrame]
+        See ``_build_final_leaderboard``.
+    bootstrap_scores : dict[int, pd.DataFrame]
+        See ``_build_final_leaderboard``.
+    primary_metric : str
+        See ``_build_final_leaderboard``.
+    metric_sort_ascending : bool
+        See ``_build_final_leaderboard``.
+    comparisons : Literal["CLD", "tiers"] | None
+        See ``_build_final_leaderboard``.
+    endpoint : str
+        See ``_build_final_leaderboard``.
+    additional_columns : list[str]
+        See ``_build_final_leaderboard``.
+
+    Returns
+    -------
+    pd.DataFrame
+        The built leaderboard DataFrame (empty if it has no entries).
+
+    """
+    leaderboard = _build_final_leaderboard(
+        manifest=manifest,
+        averaged_scores=averaged_scores,
+        bootstrap_scores=bootstrap_scores,
+        primary_metric=primary_metric,
+        metric_sort_ascending=metric_sort_ascending,
+        comparisons=comparisons,
+        endpoint=endpoint,
+        additional_columns=additional_columns,
+    )
+    if leaderboard.leaderboard_df is not None:
+        return leaderboard.leaderboard_df
+    return pd.DataFrame()
+
+
+def _build_final_leaderboard(
+    manifest: pd.DataFrame,
+    averaged_scores: dict[int, pd.DataFrame],
+    bootstrap_scores: dict[int, pd.DataFrame],
+    primary_metric: str,
+    metric_sort_ascending: bool,
+    comparisons: Literal["CLD", "tiers"] | None,
+    endpoint: str,
+    additional_columns: list[str],
+) -> FinalLeaderboard:
     """Build one endpoint's leaderboard from already-fetched manifest/score data.
 
     Parameters
@@ -386,8 +439,9 @@ def _build_leaderboard(
 
     Returns
     -------
-    pd.DataFrame
-        The built leaderboard DataFrame.
+    FinalLeaderboard
+        The built leaderboard, with its pairwise comparisons when ``comparisons`` is
+        set.
 
     """
     # Every track's averaged-results/bootstrap files hold every endpoint's data, wide
@@ -425,7 +479,7 @@ def _build_leaderboard(
         )
         entries.append(entry)
 
-    leaderboard = FinalLeaderboard(
+    return FinalLeaderboard(
         entries=entries,
         primary_metric=primary_metric,
         metric_sort_ascending=metric_sort_ascending,
@@ -433,9 +487,31 @@ def _build_leaderboard(
         additional_columns=additional_columns,
     )
 
-    if leaderboard.leaderboard_df is not None:
-        return leaderboard.leaderboard_df
-    return pd.DataFrame()
+
+@dataclass
+class TrackLeaderboards:
+    """Every leaderboard variant for a track, plus what they were built from.
+
+    Attributes
+    ----------
+    leaderboards : dict[str, pd.DataFrame | None]
+        See ``create_track_leaderboards``.
+    master_slug : str | None
+        The master leaderboard's key in ``leaderboards`` (``MACRO_ENDPOINT_LABEL``
+        for a multi-endpoint track, else its one endpoint); None for a track with
+        no endpoints.
+    manifest : pd.DataFrame
+        The manifest rows the leaderboards were built from, one per entry.
+    comparisons : pd.DataFrame | None
+        The master leaderboard's pairwise comparisons
+        (``FinalLeaderboard.comparison_df``), or None without significance testing.
+
+    """
+
+    leaderboards: dict[str, pd.DataFrame | None]
+    master_slug: str | None = None
+    manifest: pd.DataFrame = field(default_factory=pd.DataFrame)
+    comparisons: pd.DataFrame | None = None
 
 
 def create_track_leaderboards(
@@ -443,6 +519,31 @@ def create_track_leaderboards(
     stage: str,
     significant_method: Literal["CLD", "tiers"] | None = "tiers",
 ) -> dict[str, pd.DataFrame | None]:
+    """Build every leaderboard variant for a track; see ``build_track_leaderboards``.
+
+    Parameters
+    ----------
+    track_paths : TrackPaths
+        See ``build_track_leaderboards``.
+    stage : str
+        See ``build_track_leaderboards``.
+    significant_method : Literal["CLD", "tiers"] | None
+        See ``build_track_leaderboards``.
+
+    Returns
+    -------
+    dict[str, pd.DataFrame | None]
+        ``build_track_leaderboards(...).leaderboards``.
+
+    """
+    return build_track_leaderboards(track_paths, stage, significant_method).leaderboards
+
+
+def build_track_leaderboards(
+    track_paths: TrackPaths,
+    stage: str,
+    significant_method: Literal["CLD", "tiers"] | None = "tiers",
+) -> TrackLeaderboards:
     """Build every leaderboard variant for a track: one per endpoint, plus a master.
 
     A track with a single endpoint (e.g. structure) gets exactly one leaderboard,
@@ -486,12 +587,13 @@ def create_track_leaderboards(
 
     Returns
     -------
-    dict[str, pd.DataFrame | None]
-        Maps each endpoint (plus ``MACRO_ENDPOINT_LABEL`` for a multi-endpoint
-        track) to its leaderboard DataFrame (empty if there are no eligible
-        submissions), or ``None`` if building that one variant raised. Each
+    TrackLeaderboards
+        ``leaderboards`` maps each endpoint (plus ``MACRO_ENDPOINT_LABEL`` for a
+        multi-endpoint track) to its leaderboard DataFrame (empty if there are no
+        eligible submissions), or ``None`` if building that one variant raised. Each
         variant is built in isolation — one endpoint's bad data can't prevent the
-        others from being returned.
+        others from being returned. Also carries the manifest and the master
+        leaderboard's pairwise comparisons, for the head-to-head release.
 
     """
     if not track_paths.endpoints:
@@ -502,7 +604,7 @@ def create_track_leaderboards(
             "Track {} has no endpoints — skipping leaderboard generation.",
             track_paths.track,
         )
-        return {}
+        return TrackLeaderboards(leaderboards={})
 
     spec = track_paths.spec
     comparisons = significant_method if stage != "live" else None
@@ -535,12 +637,17 @@ def create_track_leaderboards(
     )
 
     if manifest.empty:
-        return dict.fromkeys(slugs, manifest)
+        return TrackLeaderboards(
+            leaderboards=dict.fromkeys(slugs, manifest),
+            master_slug=master_slug,
+            manifest=manifest,
+        )
 
     leaderboards: dict[str, pd.DataFrame | None] = {}
+    master_comparisons: pd.DataFrame | None = None
     for slug in slugs:
         try:
-            leaderboards[slug] = _build_leaderboard(
+            built = _build_final_leaderboard(
                 manifest=manifest,
                 averaged_scores=averaged_scores,
                 bootstrap_scores=bootstrap_scores,
@@ -555,7 +662,18 @@ def create_track_leaderboards(
                 "Failed to build {} {} leaderboard", track_paths.track, slug
             )
             leaderboards[slug] = None
-    return leaderboards
+            continue
+        leaderboards[slug] = (
+            built.leaderboard_df if built.leaderboard_df is not None else pd.DataFrame()
+        )
+        if slug == master_slug:
+            master_comparisons = built.comparison_df
+    return TrackLeaderboards(
+        leaderboards=leaderboards,
+        master_slug=master_slug,
+        manifest=manifest,
+        comparisons=master_comparisons,
+    )
 
 
 # ---------------------------------------------------------------------------

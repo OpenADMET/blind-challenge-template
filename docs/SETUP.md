@@ -306,7 +306,9 @@ Once it's open, the organiser tools are in [`scripts/`](../scripts/README.md):
 - **Interim and final leaderboards:** `scripts/interim_leaderboard.ipynb` after
   `INTERIM_LEADERBOARD_DEADLINE`, `scripts/final_leaderboard.ipynb` after
   `FINAL_LEADERBOARD_DEADLINE`. Each builds, checks and uploads the boards, then says
-  what to set `CURRENT_PHASE` to.
+  what to set `CURRENT_PHASE` to. The final one also writes the files for the Space's
+  Head-to-Head tab, which appears in phase 4 (`HEAD_TO_HEAD_ENABLED` in
+  `hf_space/config.py`).
 - **Taking entries off the leaderboard:** `scripts/quarantine_submissions.py`
   ([removing-entries.md](removing-entries.md)).
 - **Banning an account:** `scripts/manage_bans.py` ([bans.md](bans.md)).

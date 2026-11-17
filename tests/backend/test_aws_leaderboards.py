@@ -1,6 +1,8 @@
 """Tests for AWS leaderboard/manifest generation functions."""
 
 import dataclasses
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -165,8 +167,11 @@ def test_create_track_leaderboards_ranks_by_the_track_spec(
     calls = []
     monkeypatch.setattr(
         al,
-        "_build_leaderboard",
-        lambda **kwargs: calls.append(kwargs) or pd.DataFrame(),
+        "_build_final_leaderboard",
+        lambda **kwargs: (
+            calls.append(kwargs)
+            or SimpleNamespace(leaderboard_df=None, comparison_df=None)
+        ),
     )
 
     create_track_leaderboards(track_paths=track_paths, stage="live")
@@ -243,3 +248,33 @@ def test_each_stage_ranks_on_its_compound_set(monkeypatch, stage, column):
     )
 
     assert result["scores_uri_for_leaderboard"].iloc[0] == manifest[column].iloc[0]
+
+
+def test_build_track_leaderboards_keeps_the_manifest_and_master_comparisons(
+    monkeypatch,
+):
+    """The head-to-head release needs the manifest and the master's comparisons."""
+    import backend.aws_leaderboards as al
+
+    manifest = pd.DataFrame({"username": ["a", "b"]})
+    monkeypatch.setattr(
+        al,
+        "_fetch_leaderboard_manifest_and_scores",
+        lambda **kwargs: (manifest, {}, {}),
+    )
+
+    def _built(**kwargs):
+        comparisons = (
+            pd.DataFrame({"entry_a": ["a"], "entry_b": ["b"]})
+            if kwargs["comparisons"]
+            else None
+        )
+        board = pd.DataFrame({"rank": [1, 2], "username": ["a", "b"]})
+        return SimpleNamespace(leaderboard_df=board, comparison_df=comparisons)
+
+    monkeypatch.setattr(al, "_build_final_leaderboard", _built)
+    result = al.build_track_leaderboards(REGRESSION_PATHS, stage="final")
+    assert result.master_slug == "MA"
+    assert result.manifest is manifest
+    assert list(result.comparisons["entry_a"]) == ["a"]
+    assert set(result.leaderboards) == {*REGRESSION_PATHS.endpoints, "MA"}

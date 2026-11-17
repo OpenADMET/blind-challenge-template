@@ -7,7 +7,8 @@ require-return-section-when-returning-nothing = true
 [tool.mypy]
 python_version = "3.12"
 
-# No stub package exists on PyPI for scikit-learn, which is otherwise untyped.
+# No stub packages exist on PyPI for scikit-learn or plotly, which are otherwise
+# untyped.
 [[tool.mypy.overrides]]
-module = ["sklearn.*"]
+module = ["sklearn.*", "plotly.*"]
 ignore_missing_imports = true

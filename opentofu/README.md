@@ -141,6 +141,12 @@ leaderboard/final/{regression,classification,structure}/   ← Generated manuall
                                              removed. Same significance-testing scope as
                                              interim.
 
+leaderboard/final/{track}/head_to_head/     ← Written once by scripts/final_leaderboard.ipynb
+  ground_truth.parquet, entries.parquet,     after FINAL_LEADERBOARD_DEADLINE, for the
+  pairwise.parquet, bootstrap.parquet,       Space's Head-to-Head tab: the only ground
+  predictions.parquet | per_compound.parquet truth and predictions the Space can read.
+                                             Entrants by rank, no usernames.
+
 admin/
   banned_users.csv                        ← The participant ban list (docs/bans.md).
                                              Created header-only by `tofu apply`, then
@@ -170,7 +176,7 @@ entries/                                  ← Full cross-track (regression +
 **Policy grants:**
 
 - `s3:PutObject` on `submissions/*`
-- `s3:GetObject` on `leaderboard/*` only (the app reads the leaderboard CSVs). It has no read access to `submissions/*`: those are other participants' predictions, and the Space only writes them.
+- `s3:GetObject` on `leaderboard/*` only (the app reads the leaderboard CSVs, and after the challenge the head-to-head release under `leaderboard/final/{track}/head_to_head/`). It has no read access to `submissions/*` or `scores/*`: those are other participants' predictions and scores, and the Space only writes submissions.
 - `s3:GetObject` on `admin/banned_users.csv` (the ban list), read-only, so a leaked Space key can't lift bans.
 - An explicit `Deny` on `s3:GetObject` for `ground_truth/*`, so an `Allow` added later by mistake can't expose it.
 - `s3:ListBucket` on the main bucket, limited to `submissions/regression/*`, `submissions/classification/*`, `submissions/structure/*`, and `leaderboard/*` prefixes (including `live`, `interim`, `final`)

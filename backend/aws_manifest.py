@@ -224,6 +224,7 @@ def create_manifest(
         "used_proprietary_data",
         "open_source_code",
         "model_report_link",
+        "original_data_uri",
     ]
     uri_columns = [scores_uri_column(c) for c in paths.spec.scored_sets]
     select_clause = ", ".join(manifest_select_columns + uri_columns)

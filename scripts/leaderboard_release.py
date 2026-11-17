@@ -11,10 +11,15 @@ from pathlib import Path
 import pandas as pd
 
 from backend.aws_leaderboards import (
-    create_track_leaderboards,
+    TrackLeaderboards,
+    build_track_leaderboards,
     get_leaderboard,
     index_leaderboard_by_rank,
     save_leaderboard,
+)
+from backend.aws_submission_processing import (
+    load_activity_ground_truth,
+    load_track_identifiers,
 )
 from backend.config import (
     CLASSIFICATION_PATHS,
@@ -24,9 +29,13 @@ from backend.config import (
     STRUCTURE_PATHS,
     TrackPaths,
 )
+from backend.head_to_head_release import (
+    build_head_to_head_release,
+    save_head_to_head_release,
+)
 from scripts.leaderboard_checks import CheckResult, check_track, master_slug
 
-Boards = dict[str, dict[str, pd.DataFrame | None]]  # track -> slug -> board
+Boards = dict[str, TrackLeaderboards]  # track -> its built leaderboards
 
 STAGE_DEADLINES = {
     "interim": INTERIM_LEADERBOARD_DEADLINE,
@@ -57,13 +66,13 @@ def build(stage: str) -> Boards:
     Returns
     -------
     Boards
-        Track to ``create_track_leaderboards``'s result. Tracks with no endpoints
+        Track to ``build_track_leaderboards``'s result. Tracks with no endpoints
         are left out.
 
     """
     _stage_deadline(stage)
     return {
-        track: create_track_leaderboards(paths, stage=stage)
+        track: build_track_leaderboards(paths, stage=stage)
         for track, paths in TRACK_PATHS.items()
         if paths.spec.endpoints
     }
@@ -93,10 +102,10 @@ def check(
     """
     deadline = _stage_deadline(stage)
     result = CheckResult()
-    for track, boards in built.items():
+    for track, track_boards in built.items():
         spec = TRACK_PATHS[track].spec
         live = get_live(track, "live", master_slug(spec))
-        found, top = check_track(spec, boards, deadline, live)
+        found, top = check_track(spec, track_boards.leaderboards, deadline, live)
         result.extend(found)
         print(f"\n{'=' * 72}\n{track} ({master_slug(spec)})\n{'=' * 72}")
         if not top.empty:
@@ -137,8 +146,8 @@ def save_local(stage: str, built: Boards, output_dir: Path = OUTPUT_DIR) -> list
     folder = output_dir / stage
     folder.mkdir(parents=True, exist_ok=True)
     written = []
-    for track, boards in built.items():
-        for slug, board in boards.items():
+    for track, track_boards in built.items():
+        for slug, board in track_boards.leaderboards.items():
             if board is None or board.empty:
                 continue
             path = folder / f"{track}_{slug}.csv"
@@ -186,15 +195,15 @@ def upload(
         raise RuntimeError(f"Not uploading: {len(result.blockers)} blocking issues")
     failed = sorted(
         (track, slug)
-        for track, boards in built.items()
-        for slug, board in boards.items()
+        for track, track_boards in built.items()
+        for slug, board in track_boards.leaderboards.items()
         if board is None
     )
     if failed:
         raise RuntimeError(f"Not uploading: these failed to build: {failed}")
     written = []
-    for track, boards in built.items():
-        for slug, board in boards.items():
+    for track, track_boards in built.items():
+        for slug, board in track_boards.leaderboards.items():
             assert board is not None  # checked above
             if board.empty:
                 print(f"skip     {track:<15} {slug:<30} (no entries)")
@@ -206,5 +215,47 @@ def upload(
                 endpoint_slug=slug,
             )
             print(f"uploaded {track:<15} {slug:<30} -> {path}")
+            written.append(path)
+    return written
+
+
+def release_head_to_head(built: Boards, force: bool = False) -> list[str]:
+    """Write the head-to-head tab's release files for every track with entries.
+
+    Run after uploading the final leaderboards. Refused before
+    ``FINAL_LEADERBOARD_DEADLINE`` (see ``backend.head_to_head_release``).
+
+    Parameters
+    ----------
+    built : Boards
+        ``build("final")``'s result.
+    force : bool
+        Write even before the final deadline. Only for testing against a
+        non-production bucket.
+
+    Returns
+    -------
+    list[str]
+        The S3 paths written.
+
+    """
+    ground_truth = None
+    written = []
+    for track, track_boards in built.items():
+        paths = TRACK_PATHS[track]
+        master = track_boards.leaderboards.get(track_boards.master_slug or "")
+        if master is None or master.empty:
+            print(f"skip     {track:<15} (no final leaderboard)")
+            continue
+        if paths.spec.dataset == "activity" and ground_truth is None:
+            ground_truth = load_activity_ground_truth()
+        files = build_head_to_head_release(
+            paths,
+            track_boards,
+            load_track_identifiers(paths),
+            ground_truth if paths.spec.dataset == "activity" else None,
+        )
+        for path in save_head_to_head_release(paths, files, force=force):
+            print(f"released {track:<15} -> {path}")
             written.append(path)
     return written

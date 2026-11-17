@@ -342,6 +342,15 @@ class TrackPaths:
         return f"leaderboard/final/{self.track}"
 
     @property
+    def head_to_head(self) -> str:
+        """Release files for the Space's head-to-head tab, written after the challenge.
+
+        The only place the Space can read ground truth, and other entrants'
+        predictions and scores; see ``head_to_head_release``.
+        """
+        return f"{self.leaderboard_final}/head_to_head"
+
+    @property
     def ground_truth(self) -> str:
         """Ground-truth data prefix. Same for every track; filenames disambiguate."""
         return GROUND_TRUTH_PREFIX

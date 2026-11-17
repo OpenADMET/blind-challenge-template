@@ -19,13 +19,17 @@ from config import (
     DISCORD_LINK,
     FAQ_MD,
     FINAL_LEADERBOARD_DEADLINE,
+    HEAD_TO_HEAD_ENABLED,
     HEADER_MARKDOWN,
     INTERIM_LEADERBOARD_DEADLINE,
     LOGO_PATH,
     MODEL_REPORT_REMINDER_DAYS,
     PAGE_TITLE,
     REQUIRE_MODEL_REPORT,
+    SHOW_TEMPLATE_CREDIT,
+    TEMPLATE_CREDIT_MD,
 )
+from head_to_head import render_head_to_head
 from leaderboards import (
     render_final_leaderboards,
     render_interim_leaderboards,
@@ -134,9 +138,17 @@ with gr.Blocks(title=PAGE_TITLE, fill_height=False) as demo:
             with gr.TabItem("🏁 Final Leaderboard"):
                 render_final_leaderboards(phase=CURRENT_PHASE)
 
+        # Compare two final-leaderboard entrants, once the final leaderboard is out
+        if CURRENT_PHASE == 4 and HEAD_TO_HEAD_ENABLED:
+            with gr.TabItem("⚔️ Head-to-Head"):
+                render_head_to_head()
+
         # Always display the FAQ tab
         with gr.TabItem("🛠️ FAQ"):
             gr.Markdown(FAQ_MD, elem_id="faq-md")
+
+    if SHOW_TEMPLATE_CREDIT:
+        gr.Markdown(TEMPLATE_CREDIT_MD, elem_classes="template-credit")
 
 
 if __name__ == "__main__":
