@@ -13,7 +13,11 @@ import pandas as pd
 import requests
 from loguru import logger
 
-from .config import FINAL_LEADERBOARD_DEADLINE, INTERIM_LEADERBOARD_DEADLINE
+from .config import (
+    BOOTSTRAP_SAMPLES,
+    FINAL_LEADERBOARD_DEADLINE,
+    INTERIM_LEADERBOARD_DEADLINE,
+)
 
 BOOTSTRAP_SEED = 0
 _MAX_REDIRECTS = 5
@@ -79,7 +83,7 @@ def clip_and_log_transform(y: np.ndarray) -> np.ndarray:
 
 @lru_cache(maxsize=3)
 def bootstrap_sampling(
-    original_dataset_size: int, n_bootstrap_repeats: int = 1000
+    original_dataset_size: int, n_bootstrap_repeats: int = BOOTSTRAP_SAMPLES
 ) -> np.ndarray:
     """Generate bootstrap sample indices for a dataset of a given size.
 
@@ -92,7 +96,8 @@ def bootstrap_sampling(
     original_dataset_size : int
         The size of the original dataset.
     n_bootstrap_repeats : int
-        The number of bootstrap samples to generate. Default is 1000.
+        The number of bootstrap samples to generate. Defaults to
+        ``config.BOOTSTRAP_SAMPLES``.
 
     Returns
     -------

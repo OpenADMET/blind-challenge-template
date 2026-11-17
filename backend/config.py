@@ -100,6 +100,12 @@ CLASSIFICATION_METRICS = [
 ]
 SORT_REGRESSION_LEADERBOARD_BY = "ST-RAE"
 SORT_CLASSIFICATION_LEADERBOARD_BY = "MCC"
+# Number of bootstrap resamples per submission. Samples are drawn once, at scoring
+# time, with a fixed seed (utils.BOOTSTRAP_SEED), and pairwise comparisons join two
+# submissions' samples on their "Sample" index. Fix B before the challenge opens and
+# never change it while it runs: submissions scored with different B would be
+# compared on different resample sets. The smallest attainable two-sided p-value
+# is 2 / (B + 1).
 BOOTSTRAP_SAMPLES = 1000
 
 # Structure dataset
