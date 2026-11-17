@@ -188,6 +188,8 @@ aws iam attach-group-policy \
 
 The policy keys off the literal substring `challenge` in resource names. Set the `NAME_MUST_CONTAIN=challenge` Actions variable so the naming guardrail enforces it; if you scope the policy to a different substring, match `NAME_MUST_CONTAIN` to it. `CHALLENGE_NAME` / `GITHUB_ORG` don't affect this policy (it globs `*challenge*`) but `render.sh` still requires them — any value works when running Step 0 standalone; run from a configured challenge repo and it reads them from `variables.tf` / `backend.hcl` automatically.
 
+The policy also allows `access-analyzer:ValidatePolicy` (read-only), which the S3 console's bucket-policy editor calls on save; without it a group member gets an "Unknown Error". If you created the group's policy before v0.2.0, re-render it and add it as a new version (`aws iam create-policy-version --policy-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/challenge-developers" --policy-document file://opentofu/policies/.rendered/challenge-developers-policy.json --set-as-default`).
+
 ### Step 1: Create this challenge's IAM identities, get the HF Space credentials
 
 From the repo root:
