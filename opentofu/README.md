@@ -374,7 +374,7 @@ mechanism.
 |-----------|-------|--------|
 | `lifecycle { prevent_destroy = true }` | S3 bucket | `tofu destroy` fails unless block is manually removed first |
 | `force_destroy = var.force_destroy` (default `false`) | S3 bucket | Bucket must be empty to destroy unless explicitly overridden |
-| `DenyDeleteSubmissions` bucket policy | S3 bucket | No principal can delete objects under `submissions/*`. Manifests live under `manifests/`, so removing a leaderboard entry never needs this lifted |
+| `DenyDeleteSubmissions` bucket policy | S3 bucket | No principal can delete objects under `submissions/*`. Manifests live under `manifests/`, so removing a leaderboard entry never needs this lifted. Clearing the bucket after testing does: see [docs/removing-entries.md](../docs/removing-entries.md) |
 | `DenyInsecureTransport` bucket policy | S3 bucket | All non-HTTPS requests denied |
 | `lifecycle { ignore_changes = all }` | `admin/banned_users.csv` | `tofu apply` creates the ban list once and never overwrites organisers' bans |
 | `reserved_concurrent_executions = 5` | Evaluator Lambdas | Caps concurrent evaluation runs to limit runaway costs |

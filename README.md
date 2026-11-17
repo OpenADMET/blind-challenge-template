@@ -48,6 +48,8 @@ The quickest way to see every fill-in point at once is the [**Todo Tree**](https
 - [docs/structure-scoring.md](docs/structure-scoring.md) — How a structure submission's PDB files turn into per-compound pose-quality scores (LDDT-PLI/BiSyRMSD/LDDT-LP) and the structure leaderboard
 - [docs/phases-and-stages.md](docs/phases-and-stages.md) — Compound sets (`live`/`hidden`/`all`), leaderboard stages, and the HF Space's `CURRENT_PHASE`, and how they relate
 - [docs/bans.md](docs/bans.md) — Banning participants: the ban list, `scripts/manage_bans.py`, and how bans relate to removing entries
+- [docs/removing-entries.md](docs/removing-entries.md) — Taking entries off the leaderboard (`scripts/quarantine_submissions.py`), clearing the bucket after testing, and the delete protection
+- [scripts/README.md](scripts/README.md) — The organiser scripts: the interim and final leaderboard notebooks, quarantine and bans
 
 ---
 

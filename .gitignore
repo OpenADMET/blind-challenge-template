@@ -232,3 +232,7 @@ opentofu/.terraform/
 opentofu/terraform.tfstate
 opentofu/terraform.tfstate.backup
 opentofu/policies/.rendered/
+
+# Organiser script outputs (leaderboard copies, quarantine logs): can contain
+# participants' details.
+scripts/output/

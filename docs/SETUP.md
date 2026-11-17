@@ -299,6 +299,20 @@ Two channels per challenge works well: one for discussion, one for submission fe
 
 To disable Discord notifications entirely, set `DISCORD_NOTIFICATIONS=0` in the backend environment.
 
+## Running the challenge
+
+Once it's open, the organiser tools are in [`scripts/`](../scripts/README.md):
+
+- **Interim and final leaderboards:** `scripts/interim_leaderboard.ipynb` after
+  `INTERIM_LEADERBOARD_DEADLINE`, `scripts/final_leaderboard.ipynb` after
+  `FINAL_LEADERBOARD_DEADLINE`. Each builds, checks and uploads the boards, then says
+  what to set `CURRENT_PHASE` to.
+- **Taking entries off the leaderboard:** `scripts/quarantine_submissions.py`
+  ([removing-entries.md](removing-entries.md)).
+- **Banning an account:** `scripts/manage_bans.py` ([bans.md](bans.md)).
+- **Clearing the bucket after testing**, before the challenge opens:
+  [removing-entries.md](removing-entries.md#clearing-the-bucket-after-testing).
+
 ## Troubleshooting
 
 AWS deploys run automatically via CI, but you can also run OpenTofu locally — see `opentofu/README.md` → "Manual/local operations".
