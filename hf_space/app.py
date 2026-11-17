@@ -11,14 +11,11 @@ import gradio as gr
 from config import (
     ABOUT_MD,
     CHALLENGE_ANNOUCEMENT_LINK,
-    CLASSIFICATION_ACTIVE,
     CURRENT_PHASE,
     DATASET_DOWNLOAD_LINK,
     FAQ_MD,
     HEADER_MARKDOWN,
     PAGE_TITLE,
-    REGRESSION_ACTIVE,
-    STRUCTURE_TRACK_LIVE,
 )
 from gradio.themes.utils import sizes
 from leaderboards import (
@@ -111,12 +108,7 @@ with gr.Blocks(
         # During phase 0 (pre-challenge), there will be placeholder text
         # After phase 3 (end of challenge), there will be placeholder text
         with gr.TabItem("✉️ Submit"):
-            render_submission_tab(
-                phase=CURRENT_PHASE,
-                regression_active=REGRESSION_ACTIVE,
-                classification_active=CLASSIFICATION_ACTIVE,
-                structure_track_live=STRUCTURE_TRACK_LIVE,
-            )
+            render_submission_tab(phase=CURRENT_PHASE)
 
         # Display live leaderboard up until end of challenge
         # During phase 0 (pre-challenge), there will be placeholder markdown

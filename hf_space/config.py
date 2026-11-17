@@ -7,6 +7,8 @@ below when standing up a new challenge.
 """
 
 import os
+from dataclasses import dataclass
+from typing import Literal
 
 # -------------------------------- Global Params ---------------------------------------
 
@@ -87,17 +89,6 @@ CLASSIFICATION_ENDPOINTS = [
     "ENDPOINT_6",
 ]
 
-# Show or hide each activity track on the Submit tab: its schema block and its
-# entry in the "Track" selector (see render_submission_tab). These are a
-# submission switch only — they do NOT touch the leaderboards. A track's
-# leaderboard tab appears whenever its endpoint list (REGRESSION_ENDPOINTS /
-# CLASSIFICATION_ENDPOINTS) is non-empty; that's the knob for leaderboard
-# visibility. For a track the challenge doesn't run at all, set its endpoint list
-# to []. When you flip one of these, edit the page markdown further down so the
-# copy participants read matches what's actually open.
-REGRESSION_ACTIVE = True
-CLASSIFICATION_ACTIVE = True
-
 # Regression and classification are independent submission tracks (see
 # render_submission_tab / Submission.track) — REQUIRED_REGRESSION_COLUMNS and
 # REQUIRED_CLASSIFICATION_COLUMNS drive each upload's own validation.
@@ -129,12 +120,6 @@ CLASSIFICATION_METRIC_DISPLAY_NAMES = {
 
 # -------------------------------- Structure Track Params -------------------------------
 
-# Turn the structure track on or off. Like the activity flags above this shows or
-# hides the track's Submit-tab option; unlike them it also shows/hides the
-# structure leaderboard tab (which additionally needs STRUCTURE_ENDPOINTS to be
-# non-empty — see leaderboards.py). Edit the page markdown to match when you flip
-# it.
-STRUCTURE_TRACK_LIVE = False
 # TODO: must equal backend.config.STRUCTURE_DATASET_SIZE (0 / unused if this
 # challenge has no structure track).
 STRUCTURE_DATASET_SIZE = 184
@@ -143,6 +128,62 @@ STRUCTURE_DATASET_SIZE = 184
 # backend.config.STRUCTURE_ENDPOINTS.
 STRUCTURE_NAME = "Structure Prediction"
 STRUCTURE_ENDPOINTS = ["structure"]
+
+# ---------------------------------- Track visibility ----------------------------------
+
+LeaderboardStage = Literal["live", "interim", "final"]
+
+
+@dataclass(frozen=True)
+class TrackVisibility:
+    """Where a track is shown on the Space.
+
+    Attributes
+    ----------
+    submissions_open : bool
+        Show the track's schema and its option in the Submit tab's track selector.
+    live : bool
+        Show the track's tab on the live leaderboards.
+    interim : bool
+        Show the track's tab on the interim leaderboards.
+    final : bool
+        Show the track's tab on the final leaderboards.
+
+    """
+
+    submissions_open: bool
+    live: bool = True
+    interim: bool = True
+    final: bool = True
+
+    def on_leaderboard(self, stage: LeaderboardStage) -> bool:
+        """Whether the track has a tab on the given leaderboard stage.
+
+        Parameters
+        ----------
+        stage : LeaderboardStage
+            "live", "interim" or "final".
+
+        Returns
+        -------
+        bool
+            True if the track is shown on that stage's leaderboards.
+
+        """
+        return bool(getattr(self, stage))
+
+
+# TODO: set for this challenge, and edit the page markdown below to match. A track
+# with an empty endpoint list (e.g. CLASSIFICATION_ENDPOINTS = []) is never shown,
+# whatever its visibility. CURRENT_PHASE separately decides which leaderboard stages
+# exist at all.
+TRACK_VISIBILITY: dict[str, TrackVisibility] = {
+    REGRESSION_TRACK: TrackVisibility(submissions_open=True),
+    CLASSIFICATION_TRACK: TrackVisibility(submissions_open=True),
+    STRUCTURE_TRACK: TrackVisibility(
+        submissions_open=False, live=False, interim=False, final=False
+    ),
+}
 
 # ------------------------------- Useful functions -------------------------------------
 

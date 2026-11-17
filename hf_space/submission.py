@@ -33,19 +33,27 @@ from config import (
     ACTIVITY_DATASET_SIZE,
     AWS_DEFAULT_REGION,
     CLASSIFICATION_ENDPOINTS,
+    CLASSIFICATION_NAME,
+    CLASSIFICATION_TRACK,
     DATASET_DOWNLOAD_LINK,
     HOURS_BETWEEN_SUBMISSIONS,
     MIN_PREDICTION_STD,
     REGRESSION_ENDPOINTS,
+    REGRESSION_NAME,
+    REGRESSION_TRACK,
     REQUIRED_CLASSIFICATION_COLUMNS,
     REQUIRED_REGRESSION_COLUMNS,
     S3_BUCKET,
     STRUCTURE_DATASET_SIZE,
+    STRUCTURE_NAME,
+    STRUCTURE_TRACK,
     SUBMISSION_CSV_EXAMPLE_CLASSIFICATION_MD,
     SUBMISSION_CSV_EXAMPLE_REGRESSION_MD,
     SUBMISSION_SCHEMA_TABLE_CLASSIFICATION_MD,
     SUBMISSION_SCHEMA_TABLE_REGRESSION_MD,
+    TRACK_VISIBILITY,
     TUTORIAL_LINK,
+    TrackVisibility,
 )
 from loguru import logger
 from models import Submission
@@ -131,17 +139,15 @@ def model_report_link_error(link: str) -> str | None:
 
 
 def render_submission_tab(
-    phase: int,
-    regression_active: bool,
-    classification_active: bool,
-    structure_track_live: bool,
+    phase: int, visibility: dict[str, TrackVisibility] | None = None
 ) -> None:
     """Render the submission tab content based on the current challenge phase.
 
-    ``regression_active`` / ``classification_active`` / ``structure_track_live``
-    each gate whether that track's schema block and Track radio option appear —
-    submissions only, not leaderboards.
+    A track's schema block and Track option appear only if its visibility has
+    ``submissions_open``. ``visibility`` defaults to ``config.TRACK_VISIBILITY``.
     """
+    visibility = TRACK_VISIBILITY if visibility is None else visibility
+    open_tracks = {track for track, v in visibility.items() if v.submissions_open}
     if phase == 0:
         gr.Markdown("""
 # Submission Portal (Coming Soon)
@@ -181,11 +187,11 @@ Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} ro
 Submit a **`.zip`** archive containing exactly **{STRUCTURE_DATASET_SIZE} `.pdb` files**, one per compound, named after the compound identifier (e.g. `x00011-1.pdb`). Each file must be a full protein–ligand complex containing **exactly one** predicted ligand pose, as a single residue named **`LIG`**. A submission where any file has no `LIG` residue, or more than one, is rejected as a whole, and the rejection still counts towards the submission cooldown, so please check your files with the validation code first.
 """
         submission_markdown = intro_markdown
-        if regression_active:
+        if REGRESSION_TRACK in open_tracks:
             submission_markdown += regression_markdown
-        if classification_active:
+        if CLASSIFICATION_TRACK in open_tracks:
             submission_markdown += classification_markdown
-        if structure_track_live:
+        if STRUCTURE_TRACK in open_tracks:
             submission_markdown += structure_markdown
         gr.Markdown(submission_markdown)
 
@@ -253,13 +259,15 @@ Submit a **`.zip`** archive containing exactly **{STRUCTURE_DATASET_SIZE} `.pdb`
             # --- Column 3: Track & file ---
             with gr.Column(scale=1):
                 gr.Markdown("### Submission")
-                tracks = []
-                if regression_active:
-                    tracks.append("Regression Prediction")
-                if classification_active:
-                    tracks.append("Classification Prediction")
-                if structure_track_live:
-                    tracks.append("Structure Prediction")
+                tracks = [
+                    name
+                    for track, name in [
+                        (REGRESSION_TRACK, REGRESSION_NAME),
+                        (CLASSIFICATION_TRACK, CLASSIFICATION_NAME),
+                        (STRUCTURE_TRACK, STRUCTURE_NAME),
+                    ]
+                    if track in open_tracks
+                ]
                 track_select = gr.Radio(
                     tracks,
                     label="Track *",
@@ -614,7 +622,9 @@ def submit_predictions(
         )
         if error:
             return gr.update(value=error, visible=True)
-        assert df is not None  # guaranteed by _read_tabular_submission when error is None
+        assert (
+            df is not None
+        )  # guaranteed by _read_tabular_submission when error is None
         for col in REGRESSION_ENDPOINTS:
             if df[col].isnull().any():
                 return gr.update(
@@ -654,7 +664,9 @@ def submit_predictions(
         )
         if error:
             return gr.update(value=error, visible=True)
-        assert df is not None  # guaranteed by _read_tabular_submission when error is None
+        assert (
+            df is not None
+        )  # guaranteed by _read_tabular_submission when error is None
         for col in CLASSIFICATION_ENDPOINTS:
             if df[col].isnull().any():
                 return gr.update(

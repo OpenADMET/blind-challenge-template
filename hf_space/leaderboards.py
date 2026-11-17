@@ -20,7 +20,9 @@ from config import (
     STRUCTURE_ENDPOINTS,
     STRUCTURE_NAME,
     STRUCTURE_TRACK,
-    STRUCTURE_TRACK_LIVE,
+    TRACK_VISIBILITY,
+    LeaderboardStage,
+    TrackVisibility,
 )
 from gradio_leaderboard import ColumnFilter, Leaderboard
 from loguru import logger
@@ -753,21 +755,33 @@ def _wire_structure_timer(
         )
 
 
-def _add_leaderboard_tabs(leaderboard_type: str, demo: gr.Blocks | None = None):
-    """Add the regression, classification, and structure leaderboard tabs to the
-    Gradio app.
+def _add_leaderboard_tabs(
+    leaderboard_type: LeaderboardStage,
+    demo: gr.Blocks | None = None,
+    visibility: dict[str, TrackVisibility] | None = None,
+):
+    """Add a tab per visible track to a leaderboard stage.
+
+    A track gets a tab if its visibility shows it on ``leaderboard_type`` and it
+    has at least one endpoint.
 
     Parameters
     ----------
-    leaderboard_type : str
-        The leaderboard_type of the leaderboard to display. One of "live",
-        "interim", or "final". Both "interim" and "final" are static leaderboards,
-        while "live" is updated every 30 seconds and on every page load.
+    leaderboard_type : LeaderboardStage
+        "live", "interim" or "final". Interim and final are static; live refreshes
+        every 30 seconds and on every page load.
     demo : gr.Blocks | None
         The app's Blocks instance, needed to wire the page-load refresh. Required
         when ``leaderboard_type == "live"``.
+    visibility : dict[str, TrackVisibility] | None
+        Where each track is shown. Defaults to ``config.TRACK_VISIBILITY``.
 
     """
+    visibility = TRACK_VISIBILITY if visibility is None else visibility
+
+    def shown(track: str, endpoints: list[str]) -> bool:
+        return len(endpoints) > 0 and visibility[track].on_leaderboard(leaderboard_type)
+
     if leaderboard_type == "live":
         regression_timer = gr.Timer(value=30)
         classification_timer = gr.Timer(value=30)
@@ -775,7 +789,7 @@ def _add_leaderboard_tabs(leaderboard_type: str, demo: gr.Blocks | None = None):
 
     with gr.Tabs():
         regression_lbs: dict[str, Leaderboard] = {}
-        if len(REGRESSION_ENDPOINTS) > 0:
+        if shown(REGRESSION_TRACK, REGRESSION_ENDPOINTS):
             with gr.TabItem(REGRESSION_NAME):
                 regression_lbs = _add_activity_track_tabs(
                     leaderboard_type,
@@ -784,7 +798,7 @@ def _add_leaderboard_tabs(leaderboard_type: str, demo: gr.Blocks | None = None):
                     ACTIVITY_METRIC_DISPLAY_NAMES,
                 )
         classification_lbs: dict[str, Leaderboard] = {}
-        if len(CLASSIFICATION_ENDPOINTS) > 0:
+        if shown(CLASSIFICATION_TRACK, CLASSIFICATION_ENDPOINTS):
             with gr.TabItem(CLASSIFICATION_NAME):
                 classification_lbs = _add_activity_track_tabs(
                     leaderboard_type,
@@ -793,8 +807,8 @@ def _add_leaderboard_tabs(leaderboard_type: str, demo: gr.Blocks | None = None):
                     CLASSIFICATION_METRIC_DISPLAY_NAMES,
                 )
         structure_lbs: dict[str, Leaderboard] = {}
-        if len(STRUCTURE_ENDPOINTS) > 0:
-            with gr.TabItem(STRUCTURE_NAME, visible=STRUCTURE_TRACK_LIVE):
+        if shown(STRUCTURE_TRACK, STRUCTURE_ENDPOINTS):
+            with gr.TabItem(STRUCTURE_NAME):
                 structure_lbs = _add_structure_track_tabs(
                     leaderboard_type, STRUCTURE_TRACK, STRUCTURE_ENDPOINTS
                 )
