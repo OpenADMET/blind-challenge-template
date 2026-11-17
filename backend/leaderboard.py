@@ -149,7 +149,8 @@ class EntryComparison:
     paired_bootstrap_data : pd.DataFrame
         Bootstrap-aligned paired deltas for the primary metric.
     p_value : float
-        Two-sided sign-test style p-value estimated from bootstrap deltas.
+        Two-sided sign-test style p-value estimated from bootstrap deltas, with the
+        ``(r + 1) / (B + 1)`` correction so it is never exactly 0.
     alpha_threshold : float
         Family-wise alpha level before multiple-testing adjustment.
     adjustment_rank : int
@@ -183,10 +184,15 @@ class EntryComparison:
         entries on the "Sample" column, then taking the difference of the primary metric
         for each sample.
 
-        The p-value is estimated using a two-sided sign-test style approach, calculating
-        the proportion of bootstrap samples where the difference is greater than 0 and
-        less than 0, and multiplying the smaller of these proportions by 2 for a
-        two-sided test.
+        The p-value is estimated using a two-sided sign-test style approach. With
+        ``B`` paired bootstrap samples, ``r`` is the smaller of the number of samples
+        where the difference is greater than or equal to 0 and the number where it is
+        less than or equal to 0. The two-sided p-value is ``2 * (r + 1) / (B + 1)``, capped at 1. The
+        ``+ 1`` terms count the observed data as one of the resamples, so the
+        smallest attainable p-value is ``2 / (B + 1)`` rather than an invalid 0.
+        Samples with a difference of exactly 0 count towards both sides, the
+        conservative convention: ties can only raise the p-value. If every difference
+        is 0, the entries are indistinguishable and the p-value is 1.
 
         The absolute mean difference is calculated as the absolute difference between
         the mean values of the primary metric for the two entries from their averaged
@@ -211,14 +217,11 @@ class EntryComparison:
             merged_bootstrap[f"{self.primary_metric}_a"]
             - merged_bootstrap[f"{self.primary_metric}_b"]
         )
-        self.p_value = (
-            min(
-                (merged_bootstrap[f"{self.primary_metric}_diff"] > 0).mean(),
-                (merged_bootstrap[f"{self.primary_metric}_diff"] < 0).mean(),
-            )
-            * 2
-        )
-        if merged_bootstrap[f"{self.primary_metric}_diff"].abs().sum() == 0:
+        diff = merged_bootstrap[f"{self.primary_metric}_diff"]
+        n_samples = len(diff)
+        r = min(int((diff >= 0).sum()), int((diff <= 0).sum()))
+        self.p_value = min(1.0, 2 * (r + 1) / (n_samples + 1))
+        if diff.abs().sum() == 0:
             self.p_value = 1.0
         self.paired_bootstrap_data = merged_bootstrap[
             ["Sample", f"{self.primary_metric}_diff"]

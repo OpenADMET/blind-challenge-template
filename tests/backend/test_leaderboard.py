@@ -101,8 +101,9 @@ def test_LeaderboardEntry_with_bootstrap_data(
 def test_EntryComparison(mock_averaged_results):
     """Verify statistical calculations and significance logic."""
     # Create two entries where Entry A is consistently better than Entry B
-    boot_a = pd.DataFrame({"Sample": range(10), "accuracy": [0.95] * 10})
-    boot_b = pd.DataFrame({"Sample": range(10), "accuracy": [0.80] * 10})
+    n = 100
+    boot_a = pd.DataFrame({"Sample": range(n), "accuracy": [0.95] * n})
+    boot_b = pd.DataFrame({"Sample": range(n), "accuracy": [0.80] * n})
 
     entry_a = LeaderboardEntry(
         "a", False, "a", pd.Timestamp.now(), "", False, mock_averaged_results, boot_a
@@ -115,9 +116,10 @@ def test_EntryComparison(mock_averaged_results):
     # Note: In real use, averaged_results would match bootstrap means
     comparison = EntryComparison(entry_a, entry_b, "accuracy", abs_mean_diff=0.0)
 
-    # Since A is always > B, min(prop>0, prop<0) is min(1.0, 0.0) * 2 = 0.0
-    assert comparison.p_value == 0.0
-    assert len(comparison.paired_bootstrap_data) == 10
+    # A is always > B, so r = 0 and p = 2 * (0 + 1) / (n + 1): the smallest
+    # attainable p-value, never exactly 0.
+    assert comparison.p_value == pytest.approx(2 / (n + 1))
+    assert len(comparison.paired_bootstrap_data) == n
 
     # Test adjusted threshold (default correction: Benjamini-Hochberg)
     # alpha=0.05, total=1, rank=1 => 0.05 * 1 / 1 = 0.05
@@ -142,6 +144,41 @@ def test_EntryComparison_tie():
 
     comparison = EntryComparison(entry_a, entry_b, "accuracy", abs_mean_diff=0.0)
     assert comparison.p_value == 1.0
+
+
+def _comparison_from_diffs(diffs: list[float]) -> EntryComparison:
+    """An EntryComparison whose paired bootstrap differences are ``diffs``."""
+    n = len(diffs)
+    boot_b = pd.DataFrame({"Sample": range(n), "accuracy": [0.5] * n})
+    boot_a = boot_b.assign(accuracy=[0.5 + d for d in diffs])
+    avg = pd.DataFrame({"accuracy_mean": [0.5], "accuracy_std": [0.0]})
+    entry_a = LeaderboardEntry(
+        "a", False, "a", pd.Timestamp.now(), "", False, avg, boot_a
+    )
+    entry_b = LeaderboardEntry(
+        "b", False, "b", pd.Timestamp.now(), "", False, avg, boot_b
+    )
+    return EntryComparison(entry_a, entry_b, "accuracy")
+
+
+@pytest.mark.parametrize(
+    ("n_pos", "n_neg", "n_zero", "expected"),
+    [
+        # r = min(#>=0, #<=0); p = 2 * (r + 1) / (B + 1), capped at 1.
+        (999, 0, 0, 2 * 1 / 1000),  # one side wins every sample: the floor, not 0
+        (0, 999, 0, 2 * 1 / 1000),  # symmetric
+        (950, 49, 0, 2 * 50 / 1000),
+        (500, 499, 0, 1.0),  # 2 * 500 / 1000 = 1.0
+        (600, 0, 399, 2 * 400 / 1000),  # zero differences count towards both sides
+        (998, 0, 1, 2 * 2 / 1000),  # a single tie lifts the floor
+    ],
+)
+def test_EntryComparison_p_value_plus_one_correction(n_pos, n_neg, n_zero, expected):
+    """#11: the (r + 1) / (B + 1) form, so a p-value is never exactly 0."""
+    diffs = [0.1] * n_pos + [-0.1] * n_neg + [0.0] * n_zero
+    comparison = _comparison_from_diffs(diffs)
+    assert comparison.p_value == pytest.approx(expected)
+    assert 0 < comparison.p_value <= 1
 
 
 def test_FinalLeaderboard(mock_bootstrap_data):

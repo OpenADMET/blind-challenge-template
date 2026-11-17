@@ -170,6 +170,15 @@ flowchart TD
   individual per-endpoint leaderboards of a multi-endpoint track.** Pairwise bootstrap
   comparisons are expensive, so this keeps the auto-generated live leaderboard cheap;
   see `create_track_leaderboards` in `backend/aws_leaderboards.py`.
+- **Pairwise p-values use the `(r + 1) / (B + 1)` form** (`EntryComparison` in
+  `backend/leaderboard.py`). Two entries' bootstrap results are paired on their shared
+  `Sample` index; `r` is the smaller of the number of samples where one entry beats or
+  ties the other and the number where it loses or ties (ties count for both sides, the
+  conservative convention), and the two-sided p-value is `2 * (r + 1) / (B + 1)`,
+  capped at 1. It is never exactly 0: with
+  `BOOTSTRAP_SAMPLES = 1000` the smallest possible value is about 0.002. P-values are
+  then compared against Benjamini-Hochberg-adjusted thresholds. Because the pairing is
+  on the sample index, `BOOTSTRAP_SAMPLES` must not change while a challenge runs.
 - **Leaderboard generation is one function regardless of track or endpoint count.**
   `create_track_leaderboards` builds one leaderboard per `TrackPaths.endpoints` entry,
   plus an additional `MA` master when there's more than one endpoint (a
