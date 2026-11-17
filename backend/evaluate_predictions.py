@@ -19,12 +19,41 @@ from .config import (
     POSEBUSTERS_MAX_FAILURES,
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
     REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX,
+    STRUCTURE_ENDPOINTS,
     STRUCTURE_METRICS,
 )
 from .utils import bootstrap_sampling, clip_and_log_transform
 
 # Residue names treated as solvent — excluded from ligand detection
 _SOLVENT_RESIDUE_NAMES: frozenset[str] = frozenset({"HOH", "WAT", "DOD"})
+
+# The submitted ligand: heavy atoms of residues named LIG. Hydrogens are excluded
+# because protonation state varies between docking programs and crystal structures
+# and would cause spurious subgraph isomorphism failures. Shared with
+# submission_validation so validation and scoring agree on what one ligand is.
+LIGAND_SELECTION = "rname=LIG and ele!=H"
+
+
+def count_ligand_residues(entity: object) -> int:
+    """Count the ``LIG`` residues in an OpenStructure entity.
+
+    OST keys a residue on chain, residue number and insertion code, and its PDB
+    reader keeps one alternate location, so altloc A/B conformers of one ligand
+    count once while two separate ligand copies count twice.
+
+    Parameters
+    ----------
+    entity : object
+        An ``ost.mol.EntityHandle`` or ``EntityView``.
+
+    Returns
+    -------
+    int
+        Number of residues matching ``LIGAND_SELECTION``.
+
+    """
+    return len(entity.Select(LIGAND_SELECTION).residues)  # type: ignore[attr-defined]
+
 
 # Sentinel returned when a per-compound structure score cannot be computed
 _NAN_STRUCTURE_METRICS: dict[str, float] = {m: np.nan for m in STRUCTURE_METRICS}
@@ -547,16 +576,18 @@ def score_single_structure(
         model = PDBPrep(model_path, fault_tolerant=True)
         ref = PDBPrep(ref_path, fault_tolerant=True)
 
-        # Select only heavy atoms of the LIG residue. Hydrogens are excluded
-        # because protonation state varies between docking programs and crystal
-        # structures and would cause spurious subgraph isomorphism failures.
-        model_lig = model.Select("rname=LIG and ele!=H")
-        ref_lig = ref.Select("rname=LIG and ele!=H")
+        model_lig = model.Select(LIGAND_SELECTION)
+        ref_lig = ref.Select(LIGAND_SELECTION)
 
-        n_model_ligs = len(model_lig.residues)
-        if n_model_ligs > 2:
+        # A submission must contain exactly one ligand pose per compound; validation
+        # rejects anything else, so this is defence in depth. With more than one,
+        # the best-pair selection below would score the best of several guesses.
+        # The reference may hold several copies of the ligand (e.g. symmetry
+        # mates); OST scores the model ligand against each and the best is kept.
+        n_model_ligs = count_ligand_residues(model)
+        if n_model_ligs != 1:
             logger.warning(
-                "Model {} contains {} LIG residues (expected at most 2)"
+                "Model {} contains {} LIG residues (expected exactly 1)"
                 " — returning NaN scores.",
                 model_path,
                 n_model_ligs,
@@ -871,7 +902,10 @@ def bootstrap_structure_metrics(
         bootstrap_sampling(n_compounds, n_bootstrap_samples)
     ):
         sample_means = np.mean(scores[idx], axis=0)
-        row: dict[str, object] = {"Sample": sample_idx, "Endpoint": "Structure"}
+        row: dict[str, object] = {
+            "Sample": sample_idx,
+            "Endpoint": STRUCTURE_ENDPOINTS[0],
+        }
         for col, value in zip(_BOOTSTRAP_COLS, sample_means):
             row[col] = value
         rows.append(row)

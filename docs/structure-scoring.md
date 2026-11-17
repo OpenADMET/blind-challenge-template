@@ -12,13 +12,13 @@ shared by every track — this doc only covers what's specific to structure:
 ```mermaid
 flowchart TD
     subgraph S0["0 · Submission format"]
-        ZIP[("structures.zip<br/>STRUCTURE_DATASET_SIZE PDB files, one per compound<br/>ligand residue must be named LIG")]
+        ZIP[("structures.zip<br/>STRUCTURE_DATASET_SIZE PDB files, one per compound<br/>exactly one ligand residue, named LIG<br/>(checked at validation)")]
     end
 
     subgraph S1["1 · Per-compound scoring — score_single_structure(), one call per compound"]
         ZIP --> LOAD["Load model + reference PDB via OST PDBPrep<br/>(fault_tolerant=True)"]
         LOAD --> SELECT["Select LIG heavy atoms<br/>(rname=LIG and ele!=H)"]
-        SELECT --> COUNT{"&gt;2 LIG residues<br/>in model?"}
+        SELECT --> COUNT{"Model LIG residues<br/>≠ 1?"}
         COUNT -->|yes| NAN1["NaN sentinel<br/>(all 3 metrics)"]
         COUNT -->|no| SCORERS["Run two independent OST scorers<br/>SCRMSDScorer -&gt; BiSyRMSD, LDDT-LP<br/>LDDTPLIScorer -&gt; LDDT-PLI<br/>(substructure_match=True, coverage_delta=0.1)"]
         SCORERS --> RECONCILE["Reconcile each scorer's independently-solved<br/>ligand assignment via 'chain.residue_number' keys<br/>(their integer indices aren't comparable)"]
@@ -88,7 +88,7 @@ whole submission:
   scored) — see the `RECONCILE`/`PAIRS` steps in the diagram.
 - **A failed match doesn't drop the compound.** Even when a compound can't be scored
   at all (bad PDB, no ligand match, LDDT-PLI ↔ SCRMSD assignment mismatch,
-  >2 LIG residues), it still gets a row with worst-case penalty values
+  a model without exactly one LIG residue), it still gets a row with worst-case penalty values
   (`LDDT-PLI`/`LDDT-LP = 0.0`, `BiSyRMSD = BISYRMSD_NAN_PENALTY`), not an exclusion —
   the same principle activity scoring follows for a metric that fails on a bootstrap
   sample: a real failure should read as a bad score, not silently vanish from the
@@ -103,14 +103,16 @@ whole submission:
   (fraction of compounds successfully matched), not a distributional quantity per
   bootstrap sample, so it's computed once and appended directly to `averaged_df`
   (`coverage_mean`) rather than flowing through the bootstrap table.
-- **`Endpoint = "Structure"` is a fixed constant**, not derived from `config.py`'s
-  endpoint list the way activity's endpoints are — it lets
-  `average_bootstrap_results_by_endpoint`/`pivot_endpoint_results_wide` (built for
-  activity's per-endpoint schema) work unchanged for structure's single endpoint. There
-  is no macro-average pseudo-endpoint for structure (see
+- **`Endpoint` is `STRUCTURE_ENDPOINTS[0]` (`"structure"`)** for every bootstrap row,
+  which lets `average_bootstrap_results_by_endpoint`/`pivot_endpoint_results_wide`
+  (built for activity's per-endpoint schema) work unchanged for structure's single
+  endpoint. There is no macro-average pseudo-endpoint for structure (see
   [scoring-and-leaderboards.md](scoring-and-leaderboards.md) — a single-endpoint track
-  never gets one), and `STRUCTURE_ENDPOINTS = ["Structure"]` is also the leaderboard's
-  one and only endpoint slug.
+  never gets one), and `STRUCTURE_ENDPOINTS[0]` is also the leaderboard's one and only
+  endpoint slug. Before v0.1.1 the label was a hard-coded `"Structure"`, which didn't
+  match the config and broke every structure leaderboard build. Leaderboard building
+  matches endpoints case-insensitively, so score files saved with the old label still
+  work.
 - **Ranked by `LDDT-PLI` descending** (`SORT_STRUCTURE_LEADERBOARD_BY = "LDDT-PLI"`,
   `metric_sort_ascending=False`) — higher is better, like classification's `MCC` but
   unlike regression's `ST-RAE` (lower is better, ascending).
@@ -148,10 +150,15 @@ whole submission:
   OST scoring is imported lazily inside `score_single_structure`'s `try` block (not at
   module load time), so importing `evaluate_predictions` doesn't require OST to be
   installed — only actually scoring a structure does.
-- **The LIG residue naming convention is not validated at submission time.** A
-  wrongly-named residue silently becomes a `coverage=0` / worst-case-penalty row here
-  rather than a validation error at upload time (see `backend/README.md`'s Structure
-  submissions note). The PoseBusters check also relies on this convention: if RDKit
+- **One model ligand, any number of reference copies.** Validation rejects a
+  submission unless every file has exactly one `LIG` residue (see
+  `backend/README.md`'s Structure submissions section), and the scorer returns the NaN
+  sentinel for a model without exactly one, as defence in depth. Otherwise the
+  best-pair selection would score the best of several submitted poses. The
+  *reference* may contain several copies of the ligand (symmetry mates, multiple
+  sites): OST scores the one model ligand against each and the best match is kept.
+  Alternate locations within one residue count as one ligand, and altloc A is scored.
+  The PoseBusters check also relies on the `LIG` naming convention: if RDKit
   can't parse the predicted PDB, or splitting it finds no `LIG` fragment, PoseBusters
   is skipped and the OST scores are returned unchanged (logged as a warning) rather
   than failing the compound.

@@ -12,6 +12,7 @@ from backend.submission_validation import (
     validate_regression_submission,
     validate_structure_submission,
 )
+from tests.backend.synthetic_complexes import OFFSET, SITE, SITE_2, benzene, complex_pdb
 
 
 def test_submission_error_to_short():
@@ -324,3 +325,74 @@ def test_validate_structure_submission_unexpected_ids(
     assert not validation_result.is_valid
     assert "Zip file contains 1 unexpected structure(s)" in log_text
     assert unexpected_id in log_text
+
+
+def _structure_zip_with(tmp_path, source_zip, replacements: dict[str, str]):
+    """Copy the example structure zip, replacing some members' contents."""
+    out = tmp_path / "structures.zip"
+    with zipfile.ZipFile(source_zip) as src, zipfile.ZipFile(out, "w") as dst:
+        for name in src.namelist():
+            dst.writestr(name, replacements.get(name, src.read(name)))
+    return out
+
+
+@pytest.mark.parametrize(
+    ("pdb_text", "expected_count"),
+    [
+        # Two separate ligand copies (different chains) — a best-of-two guess.
+        (complex_pdb(benzene(OFFSET, "B", 1), benzene(SITE, "C", 1, first_serial=600)), 2),
+        # Two copies in the same chain with different residue numbers.
+        (complex_pdb(benzene(SITE, "B", 1), benzene(SITE_2, "B", 2, first_serial=600)), 2),
+        # Ligand present but not named LIG.
+        (complex_pdb(benzene(SITE)).replace(" LIG ", " UNL "), 0),
+    ],
+    ids=["two-chains", "same-chain", "not-named-LIG"],
+)
+def test_validate_structure_submission_requires_exactly_one_ligand(
+    tmp_path,
+    example_structure_data_path,
+    example_structure_expected_ids,
+    pdb_text,
+    expected_count,
+):
+    """Any file without exactly one LIG residue invalidates the whole submission,
+    and the error names the file and what was found."""
+    bad = _structure_zip_with(
+        tmp_path, example_structure_data_path, {"STRUCT-0002.pdb": pdb_text}
+    )
+    result = validate_structure_submission(bad, expected_ids=example_structure_expected_ids)
+    assert not result.is_valid
+    assert len(result.errors) == 1
+    assert "exactly one predicted ligand pose" in result.errors[0].message
+    assert result.errors[0].details == [f"STRUCT-0002.pdb: {expected_count} LIG residues"]
+
+
+def test_validate_structure_submission_lists_every_offending_file(
+    tmp_path, example_structure_data_path, example_structure_expected_ids
+):
+    two = complex_pdb(benzene(OFFSET, "B", 1), benzene(SITE, "C", 1, first_serial=600))
+    bad = _structure_zip_with(
+        tmp_path,
+        example_structure_data_path,
+        {"STRUCT-0001.pdb": two, "STRUCT-0003.pdb": two},
+    )
+    result = validate_structure_submission(bad, expected_ids=example_structure_expected_ids)
+    assert result.errors[0].details == [
+        "STRUCT-0001.pdb: 2 LIG residues",
+        "STRUCT-0003.pdb: 2 LIG residues",
+    ]
+
+
+def test_validate_structure_submission_altloc_conformers_are_one_ligand(
+    tmp_path, example_structure_data_path, example_structure_expected_ids
+):
+    """Alternate locations A/B of one residue are one ligand, not two."""
+    altlocs = complex_pdb(
+        benzene(SITE, "B", 1, altloc="A"),
+        benzene(OFFSET, "B", 1, altloc="B", first_serial=600),
+    )
+    ok = _structure_zip_with(
+        tmp_path, example_structure_data_path, {"STRUCT-0002.pdb": altlocs}
+    )
+    result = validate_structure_submission(ok, expected_ids=example_structure_expected_ids)
+    assert result.is_valid, result.get_error_summary()

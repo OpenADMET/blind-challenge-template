@@ -97,10 +97,11 @@ Validation checks:
 
 - filename suffix is `.zip`
 - archive contains exactly `STRUCTURE_DATASET_SIZE` `.pdb` files (or, when `expected_ids` is supplied, exactly that set of IDs — no more, no less)
+- every `.pdb` file contains exactly one ligand residue named `LIG` (one predicted pose per compound). Files are read with OpenStructure and ligands counted by the same rule the scorer uses (`evaluate_predictions.count_ligand_residues`); alternate locations of one residue count once. Any offending file invalidates the whole submission, and the error lists each file and how many `LIG` residues it has.
 
 Entry point: `validate_structure_submission()`.
 
-Note: the ligand residue in each PDB must be named `LIG` (used by OST — `evaluate_predictions.score_single_structure` — to identify the small molecule), but this is **not** checked at submission time; a wrong residue name only surfaces later as a `NaN` structure score, not a validation error. Deeper structure validation (ligand residue naming, ligand/protein chain correctness, alignment, binding site geometry, etc.) is not implemented yet. See [docs/structure-scoring.md](../docs/structure-scoring.md) for the full structure scoring pipeline.
+Note: the ligand residue must be named `LIG` (used by OST — `evaluate_predictions.score_single_structure` — to identify the small molecule). A file with no `LIG` residue fails validation under the one-ligand rule above. Deeper structure validation (ligand/protein chain correctness, alignment, binding site geometry, etc.) is not implemented yet. See [docs/structure-scoring.md](../docs/structure-scoring.md) for the full structure scoring pipeline.
 
 ## Scoring Behavior (Regression / Classification)
 
@@ -178,7 +179,7 @@ rather than ranking:
 - Submissions: `submissions/{track}/{user_id}/{submission_id}/{filename}` — `{track}` is `regression`, `classification`, or `structure`, each with its own independent upload
 - Manifest: `submissions/manifest/{track}/{user_id}_{submission_id}.parquet` — `{track}` is `regression`, `classification`, or `structure`, one manifest row per submission
 - Scores: `scores/all/{track}/{user_id}/{submission_id}/averaged-results.parquet`, `scores/phase_1/{track}/{user_id}/{submission_id}/averaged-results.parquet`
-- Leaderboard: `leaderboard/{live,interim,final}/{track}/{endpoint_slug}_leaderboard_latest.csv` — `{endpoint_slug}` is `MA` for the master (multi-endpoint tracks only), `Structure` for the structure track's one leaderboard, one of the regression endpoints (e.g. `ENDPOINT_1`) for `track="regression"`, or one of the classification endpoints (e.g. `ENDPOINT_5`) for `track="classification"`
+- Leaderboard: `leaderboard/{live,interim,final}/{track}/{endpoint_slug}_leaderboard_latest.csv` — `{endpoint_slug}` is `MA` for the master (multi-endpoint tracks only), `structure` for the structure track's one leaderboard, one of the regression endpoints (e.g. `ENDPOINT_1`) for `track="regression"`, or one of the classification endpoints (e.g. `ENDPOINT_5`) for `track="classification"`
 - Entries list (every track combined): `entries/all_entries_latest.csv`
 
 All S3 paths are constructed using the `TrackPaths` dataclass helpers (including `.all_entries` for the entries list — the same prefix for every track, since the list spans all of them), not by string concatenation.
@@ -287,5 +288,5 @@ Rules:
 
 ## Known TODOs
 
-- Deeper structure validation rules beyond file count and PDB format (e.g., ligand residue naming, ligand/protein chain correctness, binding site geometry) — see the note under Structure submissions above
+- Deeper structure validation rules beyond file count and one `LIG` residue per file (e.g., ligand/protein chain correctness, binding site geometry) — see the note under Structure submissions above
 - Implement structure-scoring quality checks (currently OST score is trusted as-is)

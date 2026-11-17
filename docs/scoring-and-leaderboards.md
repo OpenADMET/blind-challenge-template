@@ -14,7 +14,7 @@ scoring call — each mirroring how the structure track is already independent.
 dataset (the same compound set, just different columns) via `ACTIVITY_PATHS`.
 The structure track itself scores a single endpoint (`LDDT-PLI`/`BiSyRMSD`/`LDDT-LP`)
 and skips the macro-averaging step entirely (stage 2 below), so it goes straight from
-stage 1 into stage 3's pivot (still narrowed to its one endpoint, "Structure") with no
+stage 1 into stage 3's pivot (still narrowed to its one endpoint, "structure") with no
 per-endpoint loop, and `create_track_leaderboards` (stage 4) builds it exactly one
 leaderboard instead of one per endpoint. See
 [structure-scoring.md](structure-scoring.md) for how structure's stage 1 actually

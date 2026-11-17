@@ -324,7 +324,9 @@ class FinalLeaderboard:
         significance testing.
     additional_columns : list[str]
         Optional extra columns copied from each entry's ``averaged_results`` into
-        the leaderboard rows.
+        the leaderboard rows. An entry whose ``averaged_results`` lacks one of them
+        (e.g. it was scored before that column existed) gets NaN for that column
+        rather than failing the whole leaderboard.
     comparisons : dict[frozenset[str], EntryComparison]
         Pairwise comparison objects keyed by entry identifier pair.
     leaderboard_df : pd.DataFrame | None
@@ -370,10 +372,15 @@ class FinalLeaderboard:
 
             for column in self.additional_columns:
                 if column not in entry.averaged_results.columns:
-                    raise ValueError(
-                        f"Column '{column}' not found in averaged_results for user "
-                        f"'{entry.username}'."
+                    # One old score file must not stop the leaderboard for everyone.
+                    logger.warning(
+                        "Column '{}' not found in averaged_results for user '{}' "
+                        "- filling with NaN.",
+                        column,
+                        entry.username,
                     )
+                    row[column] = float("nan")
+                    continue
                 row[column] = entry.averaged_results[column].iloc[0]
 
             rows.append(row)

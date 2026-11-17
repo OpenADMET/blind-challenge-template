@@ -186,7 +186,8 @@ entries/                                  ← Full cross-track (regression +
 **Policy grants:**
 
 - `s3:PutObject` on `submissions/*`
-- `s3:GetObject` on `leaderboard/*` and `submissions/*` (the app reads the leaderboard CSVs and lets a participant see their own past submissions)
+- `s3:GetObject` on `leaderboard/*` only (the app reads the leaderboard CSVs). It has no read access to `submissions/*`: those are other participants' predictions, and the Space only writes them.
+- An explicit `Deny` on `s3:GetObject` for `ground_truth/*`, so an `Allow` added later by mistake can't expose it.
 - `s3:ListBucket` on the main bucket, limited to `submissions/regression/*`, `submissions/classification/*`, `submissions/structure/*`, and `leaderboard/*` prefixes (including `live`, `interim`, `final`)
 
 Set the resulting credentials as HuggingFace Space secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET`).

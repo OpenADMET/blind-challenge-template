@@ -14,6 +14,8 @@ from backend.config import (
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
     REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX,
     REGRESSION_ENDPOINTS,
+    STRUCTURE_ENDPOINTS,
+    STRUCTURE_METRICS,
 )
 from backend.evaluate_predictions import (
     _metric_needs_credible_interval_bounds,
@@ -21,6 +23,7 @@ from backend.evaluate_predictions import (
     add_macro_endpoint,
     average_bootstrap_results_by_endpoint,
     bootstrap_metrics,
+    bootstrap_structure_metrics,
     compute_macro_bootstrap_results,
     pivot_endpoint_results_wide,
     score_activity_predictions,
@@ -377,3 +380,14 @@ def test_pivot_endpoint_results_wide(example_regression_bootstrap_scores):
         assert f"{endpoint}_ST-RAE_std" in wide.columns
 
     assert wide.shape[1] == (len(REGRESSION_ENDPOINTS) + 1) * len(ACTIVITY_METRICS) * 2
+
+
+def test_bootstrap_structure_metrics_uses_configured_endpoint_label():
+    """Structure bootstrap rows carry STRUCTURE_ENDPOINTS[0], so the wide averaged
+    results are prefixed with the same label the leaderboard narrows on (#25)."""
+    per_compound = pd.DataFrame({m: np.linspace(0, 1, 10) for m in STRUCTURE_METRICS})
+    bootstrap_df = bootstrap_structure_metrics(per_compound, 5)
+    assert set(bootstrap_df["Endpoint"]) == {STRUCTURE_ENDPOINTS[0]}
+
+    wide = pivot_endpoint_results_wide(average_bootstrap_results_by_endpoint(bootstrap_df))
+    assert all(c.startswith(f"{STRUCTURE_ENDPOINTS[0]}_") for c in wide.columns)
