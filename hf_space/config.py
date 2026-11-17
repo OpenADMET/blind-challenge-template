@@ -79,6 +79,12 @@ STRUCTURE_DATASET_SIZE = 184
 REQUIRE_MODEL_REPORT = True
 
 
+# Compound sets and leaderboard stages. Must mirror backend/config.py.
+COMPOUND_SETS = ("all", "live", "hidden")
+LEADERBOARD_STAGES = ("live", "interim", "final")
+DEFAULT_LEADERBOARD_SETS = {"live": "live", "interim": "all", "final": "all"}
+
+
 @dataclass(frozen=True)
 class TrackSpec:
     """What a competition track is. Mirrors ``backend.config.TrackSpec``.
@@ -104,6 +110,9 @@ class TrackSpec:
         Number of compounds a submission must cover.
     extra_columns : tuple[str, ...]
         Additional averaged-results columns carried onto the leaderboard.
+    leaderboard_sets : dict[str, str]
+        The compound set ("live", "hidden" or "all") each leaderboard stage ranks
+        on.
 
     """
 
@@ -115,6 +124,9 @@ class TrackSpec:
     higher_is_better: bool
     dataset_size: int
     extra_columns: tuple[str, ...] = field(default=())
+    leaderboard_sets: dict[str, str] = field(
+        default_factory=lambda: dict(DEFAULT_LEADERBOARD_SETS)
+    )
 
     def __post_init__(self) -> None:
         """Reject a spec that can't be ranked or displayed consistently.
@@ -127,13 +139,21 @@ class TrackSpec:
         ------
         ValueError
             If ``primary_metric`` isn't one of ``metrics``, a metric or endpoint is
-            listed twice, or ``dataset_size`` is negative.
+            listed twice, ``dataset_size`` is negative, or ``leaderboard_sets``
+            doesn't map every stage to a known compound set.
 
         """
         if self.primary_metric not in self.metrics:
             raise ValueError(
                 f"{self.track}: primary_metric {self.primary_metric!r} is not one of "
                 f"its metrics {self.metrics}"
+            )
+        if set(self.leaderboard_sets) != set(LEADERBOARD_STAGES) or not set(
+            self.leaderboard_sets.values()
+        ) <= set(COMPOUND_SETS):
+            raise ValueError(
+                f"{self.track}: leaderboard_sets must map each of {LEADERBOARD_STAGES} "
+                f"to one of {COMPOUND_SETS}, got {self.leaderboard_sets}"
             )
         for name, values in (("metrics", self.metrics), ("endpoints", self.endpoints)):
             duplicates = sorted({v for v in values if values.count(v) > 1})

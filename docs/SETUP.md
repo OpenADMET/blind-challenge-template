@@ -239,7 +239,7 @@ aws s3 cp "structure-dataset.zip"        "s3://${BUCKET}/${PREFIX}/structure-dat
 aws s3 cp "structure-identifiers.parquet" "s3://${BUCKET}/${PREFIX}/structure-identifiers.parquet" --only-show-errors
 ```
 
-`structure-identifiers.parquet` needs `Molecule_Name` and `phase` columns. Also give it a `SMILES` column with each ligand's ground-truth SMILES: scoring then takes the ligand bonds from it rather than guessing them from atom distances, which makes compounds with strained rings unscoreable and causes false PoseBusters failures (see [structure-scoring.md](structure-scoring.md)). Without it, scoring still works, as before.
+Both identifiers files need `Molecule_Name` and `set` columns; `set` is `live` or `hidden` (see [phases-and-stages.md](phases-and-stages.md) for which leaderboard ranks on which set). Also give `structure-identifiers.parquet` a `SMILES` column with each ligand's ground-truth SMILES: scoring then takes the ligand bonds from it rather than guessing them from atom distances, which makes compounds with strained rings unscoreable and causes false PoseBusters failures (see [structure-scoring.md](structure-scoring.md)). Without it, scoring still works, as before.
 
 ### Step 3: Create the GitHub Actions deploy role, set GitHub secrets
 

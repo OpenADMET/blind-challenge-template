@@ -1,46 +1,15 @@
 """Tests for the utils module."""
 
-from datetime import UTC, datetime, timedelta
-
 import numpy as np
 import pandas as pd
 import pytest
 
-from backend.config import FINAL_LEADERBOARD_DEADLINE, INTERIM_LEADERBOARD_DEADLINE
 from backend.utils import (
     _safeify_username,
     bootstrap_sampling,
     clip_and_log_transform,
-    current_phase,
     validate_model_details,
 )
-
-
-def test_current_phase_before_phase_1():
-    """Test that current_phase returns 1 before the interim leaderboard deadline."""
-    interim_deadline = datetime.strptime(
-        INTERIM_LEADERBOARD_DEADLINE, "%Y-%m-%dT%H:%M:%SZ"
-    ).replace(tzinfo=UTC)
-    test_time = interim_deadline - timedelta(seconds=1)
-    assert current_phase(test_time) == 1
-
-
-def test_current_phase_during_phase_2():
-    """Test that current_phase returns 2 after the interim leaderboard deadline."""
-    interim_deadline = datetime.strptime(
-        INTERIM_LEADERBOARD_DEADLINE, "%Y-%m-%dT%H:%M:%SZ"
-    ).replace(tzinfo=UTC)
-    test_time = interim_deadline + timedelta(seconds=1)
-    assert current_phase(test_time) == 2
-
-
-def test_current_phase_after_phase_2():
-    """Test that current_phase returns 0 after the final leaderboard deadline."""
-    final_deadline = datetime.strptime(
-        FINAL_LEADERBOARD_DEADLINE, "%Y-%m-%dT%H:%M:%SZ"
-    ).replace(tzinfo=UTC)
-    test_time = final_deadline + timedelta(seconds=1)
-    assert current_phase(test_time) == 0
 
 
 def test_clip_and_log_transform():

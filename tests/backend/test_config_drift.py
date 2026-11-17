@@ -54,6 +54,9 @@ def test_track_spec_matches(track):
         "ACTIVITY_DATASET_SIZE",
         "STRUCTURE_DATASET_SIZE",
         "REQUIRE_MODEL_REPORT",
+        "COMPOUND_SETS",
+        "LEADERBOARD_STAGES",
+        "DEFAULT_LEADERBOARD_SETS",
     ],
 )
 def test_shared_constant_matches(name):

@@ -4,7 +4,6 @@ import ipaddress
 import re
 import socket
 import time
-from datetime import UTC, datetime
 from functools import lru_cache
 from urllib.parse import urljoin, urlparse
 
@@ -15,52 +14,10 @@ from loguru import logger
 
 from .config import (
     BOOTSTRAP_SAMPLES,
-    FINAL_LEADERBOARD_DEADLINE,
-    INTERIM_LEADERBOARD_DEADLINE,
 )
 
 BOOTSTRAP_SEED = 0
 _MAX_REDIRECTS = 5
-
-
-def current_phase(current_time: datetime) -> int:
-    """Determine the current phase of the challenge based on the current date.
-
-    During phase 1, only the training data is available. During phase 2, analog set 1 is
-    unblinded. After phase 2 (phase 0), all data is unblinded.
-
-    Parameters
-    ----------
-    current_time : datetime
-        The current time to use for determining the phase.
-
-    Returns
-    -------
-    int
-        The current phase of the challenge (1, 2, or 0 if both phases are over).
-
-    """
-    if current_time.tzinfo is None:
-        current_time = current_time.replace(tzinfo=UTC)
-    else:
-        current_time = current_time.astimezone(UTC)
-
-    interim_deadline = datetime.strptime(
-        INTERIM_LEADERBOARD_DEADLINE, "%Y-%m-%dT%H:%M:%SZ"
-    ).replace(tzinfo=UTC)
-    final_deadline = datetime.strptime(
-        FINAL_LEADERBOARD_DEADLINE, "%Y-%m-%dT%H:%M:%SZ"
-    ).replace(tzinfo=UTC)
-
-    if current_time < interim_deadline:
-        phase = 1
-    elif current_time < final_deadline:
-        phase = 2
-    else:
-        phase = 0
-
-    logger.debug("Current time: {}, Current phase: {}", current_time, phase)
-    return phase
 
 
 def clip_and_log_transform(y: np.ndarray) -> np.ndarray:

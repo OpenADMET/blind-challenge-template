@@ -58,3 +58,32 @@ def test_track_paths_read_from_the_spec():
     assert REGRESSION_PATHS.identifiers_file == (
         "ground_truth/activity-identifiers.parquet"
     )
+
+
+@pytest.mark.parametrize(
+    "sets",
+    [
+        {"live": "live", "interim": "all"},  # a stage missing
+        {"live": "live", "interim": "all", "final": "phase_2"},  # unknown set
+    ],
+)
+def test_invalid_leaderboard_sets_are_rejected(sets):
+    with pytest.raises(ValueError, match="leaderboard_sets"):
+        dataclasses.replace(REGRESSION_SPEC, leaderboard_sets=sets)
+
+
+@pytest.mark.parametrize(
+    ("sets", "scored"),
+    [
+        ({"live": "live", "interim": "all", "final": "all"}, ["all", "live"]),
+        ({"live": "live", "interim": "hidden", "final": "hidden"}, ["live", "hidden"]),
+        ({"live": "all", "interim": "all", "final": "all"}, ["all"]),
+    ],
+)
+def test_scored_sets_are_the_sets_the_stages_use(sets, scored):
+    spec = dataclasses.replace(REGRESSION_SPEC, leaderboard_sets=sets)
+    assert spec.scored_sets == scored
+
+
+def test_track_paths_score_prefix_per_set():
+    assert REGRESSION_PATHS.scores("hidden") == "scores/hidden/regression"

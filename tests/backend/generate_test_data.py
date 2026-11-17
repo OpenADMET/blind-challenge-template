@@ -195,7 +195,7 @@ def build_structure_fixtures() -> pd.DataFrame:
     identifiers = pd.DataFrame(
         {
             "Molecule_Name": names,
-            "phase": [1 if i % 2 else 2 for i in range(N_STRUCTURES)],
+            "set": ["live" if i % 2 else "hidden" for i in range(N_STRUCTURES)],
         }
     )
     zip_path = DATA_DIR / "structure-submissions" / "structures.zip"

@@ -104,7 +104,7 @@ def _structure_scores(monkeypatch, lddt_pli: float, endpoint_label: str | None =
             lambda df, b: real_bootstrap(df, b).assign(Endpoint=endpoint_label),
         )
     _, bootstrap_df, averaged_df, _ = asp.score_structure_submission(
-        predicted={}, phase=0, ground_truth={}
+        predicted={}, compound_set="all", ground_truth={}
     )
     monkeypatch.undo()
     return averaged_df, bootstrap_df
@@ -209,3 +209,37 @@ def test_final_stage_model_report_requirement(monkeypatch, require_report, kept)
     )
 
     assert list(result["username"]) == kept
+
+
+@pytest.mark.parametrize(
+    ("stage", "column"), [("live", "live_scores_uri"), ("final", "hidden_scores_uri")]
+)
+def test_each_stage_ranks_on_its_compound_set(monkeypatch, stage, column):
+    """#16: a track can rank live on live compounds and finally on hidden ones."""
+    import backend.aws_leaderboards as al
+
+    spec = dataclasses.replace(
+        CLASSIFICATION_SPEC,
+        leaderboard_sets={"live": "live", "interim": "hidden", "final": "hidden"},
+    )
+    monkeypatch.setitem(
+        al._TRACK_PATHS,
+        "classification",
+        dataclasses.replace(CLASSIFICATION_PATHS, spec=spec),
+    )
+    manifest = pd.DataFrame(
+        {
+            "username": ["a"],
+            "model_report_link": ["https://example.org/r"],
+            "live_scores_uri": ["s3://b/live"],
+            "hidden_scores_uri": ["s3://b/hidden"],
+        }
+    )
+    monkeypatch.setattr(al, "create_manifest", lambda **kwargs: manifest.copy())
+    monkeypatch.setattr(al, "get_averaged_scores_for_leaderboard", lambda m: {})
+
+    result, _, _ = al._fetch_leaderboard_manifest_and_scores(
+        track="classification", stage=stage, remove_invalid=False, with_bootstrap=False
+    )
+
+    assert result["scores_uri_for_leaderboard"].iloc[0] == manifest[column].iloc[0]

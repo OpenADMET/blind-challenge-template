@@ -16,13 +16,14 @@ from loguru import logger
 from .config import (
     BOOTSTRAP_SAMPLES,
     CLASSIFICATION_PATHS,
+    COMPOUND_SETS,
     GROUND_TRUTH_PREFIX,
     REGRESSION_PATHS,
     S3_BUCKET,
-    STRUCTURE_DATASET_SIZE,
     STRUCTURE_PATHS,
     SubmissionKey,
     TrackPaths,
+    scores_uri_column,
 )
 from .discord_bot import post_result_to_discord
 from .evaluate_predictions import (
@@ -151,18 +152,17 @@ def create_validation_metadata(
         Single-row DataFrame with validation outcome and score URIs.
 
     """
-    scores_all_base = (
-        f"s3://{S3_BUCKET}/{track_paths.scores_all}/{sk.user_id}/{sk.submission_id}"
-    )
-    scores_phase_1_base = (
-        f"s3://{S3_BUCKET}/{track_paths.scores_phase_1}/{sk.user_id}/{sk.submission_id}"
-    )
     metadata = {
         **submission_metadata,
         "valid_submission": valid_submission,
         "original_data_uri": f"s3://{S3_BUCKET}/{sk.key}",
-        "all_scores_uri": f"{scores_all_base}/averaged-results.parquet",
-        "phase_1_scores_uri": f"{scores_phase_1_base}/averaged-results.parquet",
+        **{
+            scores_uri_column(compound_set): (
+                f"s3://{S3_BUCKET}/{track_paths.scores(compound_set)}/"
+                f"{sk.user_id}/{sk.submission_id}/averaged-results.parquet"
+            )
+            for compound_set in track_paths.spec.scored_sets
+        },
     }
     df = pd.DataFrame([metadata])
     # Ensure correct types for faster loading of parquet files
@@ -186,8 +186,8 @@ def load_track_identifiers(paths: TrackPaths) -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        DataFrame with a ``Molecule_Name`` column and a ``phase`` column
-        (1 = interim, 2 = final).
+        DataFrame with a ``Molecule_Name`` column and a ``set`` column ("live" or
+        "hidden").
 
     Raises
     ------
@@ -202,6 +202,40 @@ def load_track_identifiers(paths: TrackPaths) -> pd.DataFrame:
         raise FileNotFoundError(
             f"{paths.spec.dataset.capitalize()} identifiers not found in S3: {path}"
         ) from None
+
+
+def compound_set_ids(identifiers: pd.DataFrame, compound_set: str) -> set[str] | None:
+    """The molecule IDs in a compound set.
+
+    Parameters
+    ----------
+    identifiers : pd.DataFrame
+        The dataset's identifiers, with ``Molecule_Name`` and ``set`` columns.
+    compound_set : str
+        "live", "hidden" or "all".
+
+    Returns
+    -------
+    set[str] | None
+        The IDs whose ``set`` is ``compound_set``, or None for "all" (no filter).
+
+    Raises
+    ------
+    ValueError
+        If ``compound_set`` isn't known, or ``set`` holds a value other than "live"
+        or "hidden".
+
+    """
+    if compound_set not in COMPOUND_SETS:
+        raise ValueError(f"Unknown compound set {compound_set!r}")
+    if compound_set == "all":
+        return None
+    unknown = set(identifiers["set"]) - {"live", "hidden"}
+    if unknown:
+        raise ValueError(
+            f"Identifiers 'set' column has values other than live/hidden: {unknown}"
+        )
+    return set(identifiers.loc[identifiers["set"] == compound_set, "Molecule_Name"])
 
 
 def fetch_tabular_submission_data(sk: SubmissionKey) -> pd.DataFrame:
@@ -261,10 +295,9 @@ def load_activity_ground_truth() -> pd.DataFrame:
 
     Shared by the regression and classification tracks — both score against the same
     underlying compound set, just different columns. Returns the complete,
-    unfiltered dataset — phase-based filtering (to the phase 1 subset) happens in
-    ``score_regression_submission``/``score_classification_submission`` instead, so
-    this only needs to be fetched once per submission regardless of how many phases
-    get scored.
+    unfiltered dataset; filtering to a compound set happens in
+    ``score_regression_submission``/``score_classification_submission``, so this is
+    fetched once per submission however many sets are scored.
 
     Returns
     -------
@@ -288,7 +321,7 @@ def load_activity_ground_truth() -> pd.DataFrame:
 
 def _score_tabular_submission(
     submissions_df: pd.DataFrame,
-    phase: int,
+    compound_set: str,
     track_paths: TrackPaths,
     ground_truth: pd.DataFrame | None,
     test_identifiers: pd.DataFrame | None,
@@ -299,9 +332,8 @@ def _score_tabular_submission(
     ----------
     submissions_df : pd.DataFrame
         The DataFrame containing the submission predictions.
-    phase : int
-        The phase number to determine which test data to use for scoring.
-        0 = all compounds; 1 = interim subset only.
+    compound_set : str
+        The compounds to score on: "live", "hidden" or "all".
     track_paths : TrackPaths
         ``REGRESSION_PATHS`` or ``CLASSIFICATION_PATHS``; its spec gives the
         endpoints and metrics scored.
@@ -309,9 +341,9 @@ def _score_tabular_submission(
         The full activity ground truth. Required — must be provided by the caller
         (see ``load_activity_ground_truth``).
     test_identifiers : pd.DataFrame | None
-        Optional preloaded activity identifiers (with "phase" and "Molecule_Name"
-        columns), used to filter ground truth down to the requested phase's
-        compounds. Loaded from S3 if not provided. Ignored when ``phase == 0``.
+        Optional preloaded activity identifiers (with ``set`` and
+        ``Molecule_Name`` columns), used to filter ground truth down to the
+        compound set. Loaded from S3 if needed and not provided.
 
     Returns
     -------
@@ -329,13 +361,11 @@ def _score_tabular_submission(
     """
     if ground_truth is None:
         raise ValueError("ground_truth is required")
-    if phase != 0:
+    if compound_set != "all":
         if test_identifiers is None:
             test_identifiers = load_track_identifiers(track_paths)
-        phase_ids = set(
-            test_identifiers.loc[test_identifiers["phase"] == phase, "Molecule_Name"]
-        )
-        ground_truth = ground_truth[ground_truth["Molecule_Name"].isin(phase_ids)]
+        set_ids = compound_set_ids(test_identifiers, compound_set) or set()
+        ground_truth = ground_truth[ground_truth["Molecule_Name"].isin(set_ids)]
 
     spec = track_paths.spec
     bootstrap_results = score_activity_predictions(
@@ -351,14 +381,14 @@ def _score_tabular_submission(
 
 def score_regression_submission(
     submissions_df: pd.DataFrame,
-    phase: int,
+    compound_set: str,
     ground_truth: pd.DataFrame | None = None,
     test_identifiers: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Score a regression (pIC50) submission against the ground truth."""
     return _score_tabular_submission(
         submissions_df,
-        phase,
+        compound_set,
         REGRESSION_PATHS,
         ground_truth,
         test_identifiers,
@@ -367,14 +397,14 @@ def score_regression_submission(
 
 def score_classification_submission(
     submissions_df: pd.DataFrame,
-    phase: int,
+    compound_set: str,
     ground_truth: pd.DataFrame | None = None,
     test_identifiers: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Score a classification submission against the ground truth."""
     return _score_tabular_submission(
         submissions_df,
-        phase,
+        compound_set,
         CLASSIFICATION_PATHS,
         ground_truth,
         test_identifiers,
@@ -386,7 +416,7 @@ def _process_new_tabular_submission(
     track_paths: TrackPaths,
     validate: Callable[[pd.DataFrame, set[str] | None], ValidationResult],
     score: Callable[
-        [pd.DataFrame, int, pd.DataFrame | None, pd.DataFrame | None],
+        [pd.DataFrame, str, pd.DataFrame | None, pd.DataFrame | None],
         tuple[pd.DataFrame, pd.DataFrame],
     ],
 ) -> None:
@@ -403,7 +433,7 @@ def _process_new_tabular_submission(
     validate : Callable[[pd.DataFrame, set[str] | None], ValidationResult]
         This track's validator (``validate_regression_submission`` or
         ``validate_classification_submission``).
-    score : Callable[[pd.DataFrame, int, pd.DataFrame | None, pd.DataFrame | None], tuple[pd.DataFrame, pd.DataFrame]]
+    score : Callable[[pd.DataFrame, str, pd.DataFrame | None, pd.DataFrame | None], tuple[pd.DataFrame, pd.DataFrame]]
         This track's scorer (``score_regression_submission`` or
         ``score_classification_submission``).
 
@@ -437,11 +467,11 @@ def _process_new_tabular_submission(
     if validation_result.is_valid:
         try:
             ground_truth_df = load_activity_ground_truth()
-            for phase in [0, 1]:
+            for compound_set in track_paths.spec.scored_sets:
                 scored_bootstrap_results, result_df = score(
-                    submissions_df, phase, ground_truth_df, identifiers_df
+                    submissions_df, compound_set, ground_truth_df, identifiers_df
                 )
-                scores_path = track_paths.scores_paths.get(phase)
+                scores_path = track_paths.scores(compound_set)
                 # Bootstrapped score saved for further analysis and plotting
                 bootstrapped_score_path = (
                     f"s3://{S3_BUCKET}/{scores_path}/"
@@ -457,8 +487,8 @@ def _process_new_tabular_submission(
                 )
                 wr.s3.to_parquet(df=result_df, path=score_path)
                 logger.info(
-                    "Saved phase {} {} scores for user {} with submission ID {} to {}",
-                    phase,
+                    "Saved {} {} scores for user {} with submission ID {} to {}",
+                    compound_set,
                     track_paths.track,
                     sk.user_id,
                     sk.submission_id,
@@ -737,25 +767,24 @@ def structure_smiles_map(identifiers: pd.DataFrame | None) -> dict[str, str] | N
 
 def aggregate_structure_scores(
     per_compound_df: pd.DataFrame,
-    phase: int,
+    compound_set: str,
     identifiers: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Aggregate already-scored compounds into one phase's leaderboard scores.
+    """Aggregate already-scored compounds into one compound set's scores.
 
-    Cheap: filters ``per_compound_df`` to the phase's compounds, bootstraps it and
+    Cheap: filters ``per_compound_df`` to the set's compounds, bootstraps it and
     averages the bootstrap. No structure is re-scored, so a submission is scored
-    once (``score_structure_predictions``) and aggregated once per phase. This
-    works because a compound's structure scores don't depend on which other
-    compounds are in the set. The activity tracks can't do the same: R², Spearman
-    and Kendall are whole-sample statistics and must be recomputed per phase.
+    once (``score_structure_predictions``) and aggregated once per set. This works
+    because a compound's structure scores don't depend on which other compounds
+    are in the set. The activity tracks can't do the same: R², Spearman and
+    Kendall are whole-sample statistics and must be recomputed per set.
 
     Parameters
     ----------
     per_compound_df : pd.DataFrame
         Output of ``score_structure_predictions`` for the whole submission.
-    phase : int
-        0 = all compounds; 1 = interim subset only (filtered via
-        ``structure-identifiers.parquet``).
+    compound_set : str
+        "live", "hidden" or "all" (see ``compound_set_ids``).
     identifiers : pd.DataFrame | None
         Optional preloaded structure identifiers; loaded from S3 when needed and
         not given.
@@ -763,23 +792,18 @@ def aggregate_structure_scores(
     Returns
     -------
     tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
-        (per_compound_df, bootstrap_df, averaged_df) for the phase: the phase's
-        rows of ``per_compound_df``, the full bootstrap results, and the
+        (per_compound_df, bootstrap_df, averaged_df) for the set: the set's rows
+        of ``per_compound_df``, the full bootstrap results, and the
         single-row, endpoint-prefixed mean/std per metric (see
         ``evaluate_predictions.pivot_endpoint_results_wide``).
 
     """
-    if phase != 0:
-        phase_identifiers = (
-            identifiers
-            if identifiers is not None
-            else load_track_identifiers(STRUCTURE_PATHS)
-        )
-        phase_ids = set(
-            phase_identifiers.loc[phase_identifiers["phase"] == phase, "Molecule_Name"]
-        )
+    if compound_set != "all":
+        if identifiers is None:
+            identifiers = load_track_identifiers(STRUCTURE_PATHS)
+        set_ids = compound_set_ids(identifiers, compound_set) or set()
         per_compound_df = per_compound_df[
-            per_compound_df["Molecule_Name"].isin(phase_ids)
+            per_compound_df["Molecule_Name"].isin(set_ids)
         ]
 
     bootstrap_df = bootstrap_structure_metrics(per_compound_df, BOOTSTRAP_SAMPLES)
@@ -795,24 +819,23 @@ def aggregate_structure_scores(
 
 def score_structure_submission(
     predicted: dict[str, str],
-    phase: int,
+    compound_set: str,
     ground_truth: dict[str, str] | None = None,
     identifiers: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, list[str]]]:
-    """Score a structure submission against the ground truth for one phase.
+    """Score a structure submission against the ground truth for one compound set.
 
     Convenience wrapper: ``score_structure_predictions`` then
     ``aggregate_structure_scores``. ``process_new_structure_submission`` calls
-    those two directly so that the expensive scoring runs once for all phases.
+    those two directly so that the expensive scoring runs once for all sets.
 
     Parameters
     ----------
     predicted : dict[str, str]
         Mapping from molecule ID to predicted PDB path, as returned by
         ``fetch_structure_submission_data``.
-    phase : int
-        0 = all compounds; 1 = interim subset only (filtered via
-        ``structure-identifiers.parquet``).
+    compound_set : str
+        "live", "hidden" or "all".
     ground_truth : dict[str, str] | None
         Optional preloaded ground-truth mapping to avoid repeated
         downloads/extraction.
@@ -837,7 +860,7 @@ def score_structure_submission(
         predicted, ground_truth, smiles_map=structure_smiles_map(identifiers)
     )
     per_compound_df, bootstrap_df, averaged_df = aggregate_structure_scores(
-        per_compound_df, phase, identifiers
+        per_compound_df, compound_set, identifiers
     )
     return per_compound_df, bootstrap_df, averaged_df, pb_failures
 
@@ -884,61 +907,58 @@ def process_new_structure_submission(sk: SubmissionKey) -> None:
             try:
                 ground_truth_tmp_dir, ground_truth = load_structure_ground_truth()
                 # The expensive step (OST + PoseBusters per compound) runs once;
-                # each phase is a cheap re-aggregation of the same scores.
+                # each compound set is a cheap re-aggregation of the same scores.
                 all_per_compound_df, pb_failures = score_structure_predictions(
                     predicted,
                     ground_truth,
                     smiles_map=structure_smiles_map(structure_identifiers),
                 )
                 validation_result.pb_failures = pb_failures
-                for phase in [0, 1]:
-                    per_compound_df, bootstrap_df, averaged_df = (
-                        aggregate_structure_scores(
-                            all_per_compound_df,
-                            phase=phase,
-                            identifiers=structure_identifiers,
+                failed_scoring = all_per_compound_df[
+                    all_per_compound_df["coverage"] == 0
+                ]
+                if len(failed_scoring) == len(all_per_compound_df):
+                    validation_result.is_valid = False
+                    validation_result.add_error(
+                        "Scoring failed for all structures, please check submission"
+                    )
+                else:
+                    if failed_scoring.empty:
+                        validation_result.scoring = "complete"
+                    else:
+                        validation_result.scoring = "partial"
+                        validation_result.scoring_errors = failed_scoring[
+                            "Molecule_Name"
+                        ].tolist()
+                    for compound_set in STRUCTURE_PATHS.spec.scored_sets:
+                        per_compound_df, bootstrap_df, averaged_df = (
+                            aggregate_structure_scores(
+                                all_per_compound_df,
+                                compound_set=compound_set,
+                                identifiers=structure_identifiers,
+                            )
                         )
-                    )
-                    scores_path = STRUCTURE_PATHS.scores_paths.get(phase)
-                    base = f"s3://{S3_BUCKET}/{scores_path}/{sk.user_id}/{sk.submission_id}"
-                    wr.s3.to_parquet(
-                        df=per_compound_df, path=f"{base}/per-compound-results.parquet"
-                    )
-                    wr.s3.to_parquet(
-                        df=bootstrap_df, path=f"{base}/bootstrap-results.parquet"
-                    )
-                    wr.s3.to_parquet(
-                        df=averaged_df, path=f"{base}/averaged-results.parquet"
-                    )
-                    logger.info(
-                        "Saved phase {} structure scores for user {} "
-                        "submission {} to {}",
-                        phase,
-                        sk.user_id,
-                        sk.submission_id,
-                        base,
-                    )
-                    # Check for failed scoring on the full set (phase 0)
-                    if phase == 0:
-                        failed_scoring = per_compound_df[
-                            per_compound_df["coverage"] == 0
-                        ]
-                        if not failed_scoring.empty:
-                            if len(failed_scoring) == STRUCTURE_DATASET_SIZE:
-                                validation_result.is_valid = False
-                                validation_result.add_error(
-                                    "Scoring failed for all structures, "
-                                    "please check submission"
-                                )
-                                break
-                            else:
-                                validation_result.scoring = "partial"
-                                validation_result.scoring_errors = failed_scoring[
-                                    "Molecule_Name"
-                                ].tolist()
-
-                        else:
-                            validation_result.scoring = "complete"
+                        base = (
+                            f"s3://{S3_BUCKET}/{STRUCTURE_PATHS.scores(compound_set)}/"
+                            f"{sk.user_id}/{sk.submission_id}"
+                        )
+                        wr.s3.to_parquet(
+                            df=per_compound_df,
+                            path=f"{base}/per-compound-results.parquet",
+                        )
+                        wr.s3.to_parquet(
+                            df=bootstrap_df, path=f"{base}/bootstrap-results.parquet"
+                        )
+                        wr.s3.to_parquet(
+                            df=averaged_df, path=f"{base}/averaged-results.parquet"
+                        )
+                        logger.info(
+                            "Saved {} structure scores for user {} submission {} to {}",
+                            compound_set,
+                            sk.user_id,
+                            sk.submission_id,
+                            base,
+                        )
             except Exception as e:
                 logger.error(
                     "Error scoring structure submission for user {} "

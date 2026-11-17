@@ -48,8 +48,8 @@ flowchart TD
         PERCOMPOUND --> PBFAILDICT[("pb_failures: molecule ID -&gt;<br/>failed PoseBusters check names<br/>(only zeroed compounds)")]
     end
 
-    subgraph S3["3 · Per-phase aggregation — aggregate_structure_scores(), once per phase<br/>bootstrap_structure_metrics()"]
-        PERCOMPOUNDDF --> PHASE["Keep the phase's compounds<br/>(phase 0: all; phase 1: identifiers' phase == 1)"]
+    subgraph S3["3 · Per-set aggregation — aggregate_structure_scores(), once per compound set<br/>bootstrap_structure_metrics()"]
+        PERCOMPOUNDDF --> PHASE["Keep the set's compounds<br/>(all, or identifiers' set == live / hidden)"]
         PHASE --> RESAMPLE["Resample compounds (rows) with replacement<br/>1000 iterations"]
         RESAMPLE --> MEAN["Per sample: plain mean of each metric<br/>across the resampled compounds<br/>(not a regression metric function, unlike activity)"]
         MEAN --> BOOTDF[("bootstrap-results.parquet<br/>1000 rows, Endpoint='Structure' always<br/>same Sample/Endpoint schema as activity")]
@@ -67,16 +67,16 @@ flowchart TD
 ## Submission-level QA (not per-compound scoring — `process_new_structure_submission`)
 
 A submission's structures are scored once (`score_structure_predictions`, the
-expensive OST and PoseBusters step). Each phase's scores are then a cheap
-re-aggregation of those per-compound scores (`aggregate_structure_scores`: filter to
-the phase's compounds, bootstrap, average). Before v0.2.0 every compound was re-scored
-for each phase, doubling the scoring Lambda's run time.
+expensive OST and PoseBusters step). Each compound set's scores (see
+[phases-and-stages.md](phases-and-stages.md)) are then a cheap re-aggregation of those
+per-compound scores (`aggregate_structure_scores`: filter to the set's compounds,
+bootstrap, average).
 
-The phase 0 (all compounds) coverage column is used to classify the whole submission:
+The coverage of all the compounds is used to classify the whole submission:
 
 - **All compounds failed** (`coverage == 0` everywhere) → the submission is marked
-  invalid outright (`"Scoring failed for all structures, please check submission"`), and
-  phase 1 is not aggregated or saved.
+  invalid outright (`"Scoring failed for all structures, please check submission"`),
+  and no scores are saved.
 - **Some compounds failed** → `validation_result.scoring = "partial"`, and the failed
   `Molecule_Name`s are recorded — the submission still gets a leaderboard entry (the
   failed compounds contribute their worst-case-penalty scores, per above), just with a
@@ -171,7 +171,7 @@ The phase 0 (all compounds) coverage column is used to classify the whole submis
   `score_structure_predictions` returns `(per_compound_df, pb_failures)` where
   `pb_failures` maps molecule ID to the sorted list of check names that failed.
   `process_new_structure_submission` stores this on `validation_result.pb_failures`
-  for phase 0, and `discord_bot.prepare_discord_message` reports it — an otherwise
+  (for all compounds), and `discord_bot.prepare_discord_message` reports it — an otherwise
   valid submission with PoseBusters failures gets an orange (not green) message
   listing which compounds and checks failed, so organisers can tell "scored poorly"
   apart from "structurally implausible."
@@ -202,8 +202,8 @@ The phase 0 (all compounds) coverage column is used to classify the whole submis
 | Ligand bonds from SMILES | `ligands_from_pdb`, `assign_bond_orders_from_template`, `ost_ligand` | `backend/ligand_bonds.py` |
 | SMILES lookup from the identifiers | `structure_smiles_map` | `backend/aws_submission_processing.py` |
 | 2. Per-submission scoring | `score_structure_predictions` (`score_compounds_raw` + `apply_coverage_and_penalties`) | `backend/evaluate_predictions.py` |
-| 3. Per-phase aggregation | `aggregate_structure_scores`, `bootstrap_structure_metrics` | `backend/aws_submission_processing.py`, `backend/evaluate_predictions.py` |
-| S3 orchestration, submission-level QA | `process_new_structure_submission` (`score_structure_submission` is a one-phase convenience wrapper) | `backend/aws_submission_processing.py` |
+| 3. Per-set aggregation | `aggregate_structure_scores`, `bootstrap_structure_metrics` | `backend/aws_submission_processing.py`, `backend/evaluate_predictions.py` |
+| S3 orchestration, submission-level QA | `process_new_structure_submission` (`score_structure_submission` is a one-set convenience wrapper) | `backend/aws_submission_processing.py` |
 | Zip extraction (submission + ground truth) | `fetch_structure_submission_data`, `load_structure_ground_truth`, `_extract_pdb_files` | `backend/aws_submission_processing.py` |
 | Submission-time validation (file count, `.zip` suffix) | `validate_structure_submission` | `backend/submission_validation.py` |
 | PoseBusters failure reporting (Discord) | `prepare_discord_message`, `_format_pb_failures` | `backend/discord_bot.py` |

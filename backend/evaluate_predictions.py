@@ -815,7 +815,7 @@ def score_compounds_raw(
     ``ground_truth_structures``. Scores are left raw: a compound that could not be
     scored has NaN metrics. ``apply_coverage_and_penalties`` turns them into the
     per-compound table that is aggregated. Keeping the two steps apart means the
-    scoring runs once per submission however many subsets (phases) are
+    scoring runs once per submission however many compound sets are
     aggregated from it, and lets the scoring be split across workers later.
 
     Parameters

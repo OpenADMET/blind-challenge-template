@@ -4,10 +4,11 @@ Most of this module talks to S3 (via awswrangler/boto3) or delegates to heavy
 scoring functions (openstructure-backed structure scoring, sklearn/scipy activity
 metrics) that are exercised in their own test modules. These tests therefore mock
 those collaborators at the ``backend.aws_submission_processing`` module boundary
-and focus on this module's own control flow: path building, phase filtering,
+and focus on this module's own control flow: path building, compound-set filtering,
 error translation, and temp-file cleanup.
 """
 
+import dataclasses
 import json
 import shutil
 import tempfile
@@ -127,7 +128,7 @@ def test_create_validation_metadata_regression(example_activity_predictions_meta
         "submitted_at",
         "original_data_uri",
         "all_scores_uri",
-        "phase_1_scores_uri",
+        "live_scores_uri",
         "open_source_code",
     }
     assert required_columns.issubset(metadata.columns)
@@ -135,7 +136,7 @@ def test_create_validation_metadata_regression(example_activity_predictions_meta
     assert metadata["open_source_code"].dtype == bool
     assert metadata["submitted_at"].dt.tz is not None
     assert metadata["all_scores_uri"].iloc[0] == (
-        f"s3://{S3_BUCKET}/{REGRESSION_PATHS.scores_all}/new-user/submission-123/"
+        f"s3://{S3_BUCKET}/{REGRESSION_PATHS.scores('all')}/new-user/submission-123/"
         "averaged-results.parquet"
     )
 
@@ -154,7 +155,7 @@ def test_create_validation_metadata_classification(
         f"s3://{S3_BUCKET}/{CLASSIFICATION_SK.key}"
     )
     assert metadata["all_scores_uri"].iloc[0] == (
-        f"s3://{S3_BUCKET}/{CLASSIFICATION_PATHS.scores_all}/new-user/submission-123/"
+        f"s3://{S3_BUCKET}/{CLASSIFICATION_PATHS.scores('all')}/new-user/submission-123/"
         "averaged-results.parquet"
     )
 
@@ -169,7 +170,7 @@ def test_create_validation_metadata_structure(example_activity_predictions_metad
     )
     assert not metadata["valid_submission"].iloc[0]
     assert metadata["all_scores_uri"].iloc[0] == (
-        f"s3://{S3_BUCKET}/{STRUCTURE_PATHS.scores_all}/new-user/submission-123/"
+        f"s3://{S3_BUCKET}/{STRUCTURE_PATHS.scores('all')}/new-user/submission-123/"
         "averaged-results.parquet"
     )
 
@@ -181,7 +182,7 @@ def test_create_validation_metadata_structure(example_activity_predictions_metad
 
 def test_load_track_identifiers_success(monkeypatch):
     """load_track_identifiers returns whatever awswrangler reads back."""
-    expected = pd.DataFrame({"Molecule_Name": ["a"], "phase": [1]})
+    expected = pd.DataFrame({"Molecule_Name": ["a"], "set": ["live"]})
     monkeypatch.setattr(asp.wr.s3, "read_parquet", lambda path: expected)
     assert asp.load_track_identifiers(REGRESSION_PATHS) is expected
 
@@ -298,12 +299,14 @@ def test_fetch_tabular_submission_data_unsupported_format():
 def test_score_regression_submission_requires_ground_truth():
     """ground_truth is contractually required; None fails fast with a clear error."""
     with pytest.raises(ValueError, match="ground_truth is required"):
-        asp.score_regression_submission(pd.DataFrame(), phase=0, ground_truth=None)
+        asp.score_regression_submission(
+            pd.DataFrame(), compound_set="all", ground_truth=None
+        )
 
 
 def _patch_scoring_internals(monkeypatch, fake_score_activity_predictions):
     """Patch the shared scoring collaborators used by score_regression_submission/
-    score_classification_submission, keeping only ground-truth phase-filtering (the
+    score_classification_submission, keeping only ground-truth compound-set filtering (the
     thing under test) real."""
     monkeypatch.setattr(
         asp, "score_activity_predictions", fake_score_activity_predictions
@@ -321,8 +324,8 @@ def _patch_scoring_internals(monkeypatch, fake_score_activity_predictions):
     )
 
 
-def test_score_regression_submission_phase_1_filters_by_isin(monkeypatch):
-    """Phase 1 narrows ground truth to that phase's Molecule_Name set via .isin()."""
+def test_score_regression_submission_live_set_filters_by_isin(monkeypatch):
+    """The live set narrows ground truth to the identifiers' live compounds."""
     captured = {}
 
     def fake_score_activity_predictions(submissions_df, ground_truth, endpoints):
@@ -334,11 +337,14 @@ def test_score_regression_submission_phase_1_filters_by_isin(monkeypatch):
 
     ground_truth = pd.DataFrame({"Molecule_Name": ["m1", "m2", "m3"]})
     identifiers = pd.DataFrame(
-        {"Molecule_Name": ["m1", "m2", "m3"], "phase": [1, 1, 2]}
+        {"Molecule_Name": ["m1", "m2", "m3"], "set": ["live", "live", "hidden"]}
     )
 
     bootstrap_df, result_df = asp.score_regression_submission(
-        pd.DataFrame(), phase=1, ground_truth=ground_truth, test_identifiers=identifiers
+        pd.DataFrame(),
+        compound_set="live",
+        ground_truth=ground_truth,
+        test_identifiers=identifiers,
     )
     assert captured["ground_truth_names"] == {"m1", "m2"}
     assert captured["endpoints"] == REGRESSION_SPEC.endpoints
@@ -346,7 +352,7 @@ def test_score_regression_submission_phase_1_filters_by_isin(monkeypatch):
     assert isinstance(result_df, pd.DataFrame)
 
 
-def test_score_regression_submission_phase_0_uses_full_ground_truth(monkeypatch):
+def test_score_regression_submission_all_set_uses_full_ground_truth(monkeypatch):
     """Phase 0 scores against every compound, no filtering applied."""
     captured = {}
 
@@ -357,16 +363,18 @@ def test_score_regression_submission_phase_0_uses_full_ground_truth(monkeypatch)
     _patch_scoring_internals(monkeypatch, fake_score_activity_predictions)
 
     ground_truth = pd.DataFrame({"Molecule_Name": ["m1", "m2", "m3"]})
-    asp.score_regression_submission(pd.DataFrame(), phase=0, ground_truth=ground_truth)
+    asp.score_regression_submission(
+        pd.DataFrame(), compound_set="all", ground_truth=ground_truth
+    )
     assert captured["ground_truth_len"] == 3
 
 
 def test_score_regression_submission_does_not_mutate_caller_ground_truth(monkeypatch):
-    """Filtering for one phase must not affect the ground truth used by later phases.
+    """Filtering for one set must not affect the ground truth used for later sets.
 
     ``score_regression_submission`` rebinds its local ``ground_truth`` name to a
     filtered copy — it must never mutate the caller's DataFrame, since the caller
-    (``process_new_regression_submission``) reuses the same object across both phases
+    (``process_new_regression_submission``) reuses the same object across every set
     in a loop.
     """
     _patch_scoring_internals(
@@ -375,12 +383,15 @@ def test_score_regression_submission_does_not_mutate_caller_ground_truth(monkeyp
 
     ground_truth = pd.DataFrame({"Molecule_Name": ["m1", "m2", "m3"]})
     identifiers = pd.DataFrame(
-        {"Molecule_Name": ["m1", "m2", "m3"], "phase": [1, 1, 2]}
+        {"Molecule_Name": ["m1", "m2", "m3"], "set": ["live", "live", "hidden"]}
     )
     original_len = len(ground_truth)
 
     asp.score_regression_submission(
-        pd.DataFrame(), phase=1, ground_truth=ground_truth, test_identifiers=identifiers
+        pd.DataFrame(),
+        compound_set="live",
+        ground_truth=ground_truth,
+        test_identifiers=identifiers,
     )
     assert len(ground_truth) == original_len
 
@@ -393,7 +404,9 @@ def test_score_regression_submission_does_not_mutate_caller_ground_truth(monkeyp
 def test_score_classification_submission_requires_ground_truth():
     """ground_truth is contractually required; None fails fast with a clear error."""
     with pytest.raises(ValueError, match="ground_truth is required"):
-        asp.score_classification_submission(pd.DataFrame(), phase=0, ground_truth=None)
+        asp.score_classification_submission(
+            pd.DataFrame(), compound_set="all", ground_truth=None
+        )
 
 
 def test_score_classification_submission_routes_own_endpoints_and_metrics(monkeypatch):
@@ -408,7 +421,7 @@ def test_score_classification_submission_routes_own_endpoints_and_metrics(monkey
 
     ground_truth = pd.DataFrame({"Molecule_Name": ["m1", "m2"]})
     bootstrap_df, result_df = asp.score_classification_submission(
-        pd.DataFrame(), phase=0, ground_truth=ground_truth
+        pd.DataFrame(), compound_set="all", ground_truth=ground_truth
     )
     assert captured["endpoints"] == CLASSIFICATION_SPEC.endpoints
     assert isinstance(bootstrap_df, pd.DataFrame)
@@ -442,7 +455,7 @@ def _patch_tabular_submission_pipeline(
     monkeypatch.setattr(
         asp,
         "load_track_identifiers",
-        lambda paths: pd.DataFrame({"Molecule_Name": ["mol1"], "phase": [1]}),
+        lambda paths: pd.DataFrame({"Molecule_Name": ["mol1"], "set": ["live"]}),
     )
     monkeypatch.setattr(
         asp,
@@ -493,7 +506,8 @@ _TABULAR_TRACK_PARAMS = [
 def test_process_new_tabular_submission_success(
     monkeypatch, process_fn_name, validate_attr, score_attr, track_paths, sk
 ):
-    """A valid submission scores both phases and writes one manifest row."""
+    """A valid submission is scored on each of its track's sets (all and live by
+    default) and writes one manifest row."""
     score_return = (pd.DataFrame({"dummy": [1]}), pd.DataFrame({"y": [1]}))
     score_mock, to_parquet_mock, save_metadata_mock = (
         _patch_tabular_submission_pipeline(
@@ -503,8 +517,8 @@ def test_process_new_tabular_submission_success(
 
     getattr(asp, process_fn_name)(sk)
 
-    assert score_mock.call_count == 2  # phase 0 and phase 1
-    assert to_parquet_mock.call_count == 4  # bootstrap + averaged, per phase
+    assert score_mock.call_count == 2  # the all and live sets
+    assert to_parquet_mock.call_count == 4  # bootstrap + averaged, per set
     saved_metadata = save_metadata_mock.call_args[0][1]
     saved_track_paths = save_metadata_mock.call_args[0][2]
     assert saved_metadata["valid_submission"].iloc[0] == True  # noqa: E712
@@ -728,7 +742,7 @@ def test_load_structure_ground_truth_builds_correct_args(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_score_structure_submission_phase_0_no_filtering(monkeypatch):
+def test_score_structure_submission_all_set_no_filtering(monkeypatch):
     """Phase 0 scores every compound and coverage_mean reflects the full set."""
     per_compound = pd.DataFrame(
         {"Molecule_Name": ["a", "b", "c"], "coverage": [1.0, 0.5, 0.0]}
@@ -750,19 +764,21 @@ def test_score_structure_submission_phase_0_no_filtering(monkeypatch):
 
     result_per_compound, _bootstrap_df, averaged_df, _pb_failures = (
         asp.score_structure_submission(
-            predicted={}, phase=0, ground_truth={}, identifiers=None
+            predicted={}, compound_set="all", ground_truth={}, identifiers=None
         )
     )
     assert len(result_per_compound) == 3
     assert averaged_df["coverage_mean"].iloc[0] == pytest.approx(0.5)
 
 
-def test_score_structure_submission_phase_1_filters_by_isin(monkeypatch):
-    """Phase 1 narrows per-compound results to that phase's Molecule_Name set."""
+def test_score_structure_submission_live_set_filters_by_isin(monkeypatch):
+    """The live set narrows per-compound results to the live compounds."""
     per_compound = pd.DataFrame(
         {"Molecule_Name": ["a", "b", "c"], "coverage": [1.0, 1.0, 0.0]}
     )
-    identifiers = pd.DataFrame({"Molecule_Name": ["a", "b", "c"], "phase": [1, 2, 1]})
+    identifiers = pd.DataFrame(
+        {"Molecule_Name": ["a", "b", "c"], "set": ["live", "hidden", "live"]}
+    )
     monkeypatch.setattr(
         asp,
         "score_structure_predictions",
@@ -780,7 +796,7 @@ def test_score_structure_submission_phase_1_filters_by_isin(monkeypatch):
 
     result_per_compound, _bootstrap_df, averaged_df, _pb_failures = (
         asp.score_structure_submission(
-            predicted={}, phase=1, ground_truth={}, identifiers=identifiers
+            predicted={}, compound_set="live", ground_truth={}, identifiers=identifiers
         )
     )
     assert set(result_per_compound["Molecule_Name"]) == {"a", "c"}
@@ -810,13 +826,13 @@ def test_score_structure_submission_loads_ground_truth_when_not_provided(monkeyp
     monkeypatch.setattr(asp, "pivot_endpoint_results_wide", lambda df: df)
 
     asp.score_structure_submission(
-        predicted={}, phase=0, ground_truth=None, identifiers=None
+        predicted={}, compound_set="all", ground_truth=None, identifiers=None
     )
     assert captured["gt"] == {"loaded": "gt"}
 
 
 # ---------------------------------------------------------------------------
-# Structure track: process_new_structure_submission phase-loop control
+# Structure track: process_new_structure_submission compound-set loop
 # ---------------------------------------------------------------------------
 
 
@@ -841,7 +857,7 @@ def _patch_structure_submission_pipeline(monkeypatch, tmp_path, per_compound_df)
     monkeypatch.setattr(
         asp,
         "load_track_identifiers",
-        lambda paths: pd.DataFrame({"Molecule_Name": ["mol1"], "phase": [1]}),
+        lambda paths: pd.DataFrame({"Molecule_Name": ["mol1"], "set": ["live"]}),
     )
     monkeypatch.setattr(
         asp,
@@ -858,9 +874,9 @@ def _patch_structure_submission_pipeline(monkeypatch, tmp_path, per_compound_df)
     # The expensive per-compound scoring; must run once per submission.
     score_mock = MagicMock(return_value=(per_compound_df, {}))
     monkeypatch.setattr(asp, "score_structure_predictions", score_mock)
-    # The cheap per-phase aggregation.
+    # The cheap per-set aggregation.
     aggregate_mock = MagicMock(
-        side_effect=lambda df, phase, identifiers: (
+        side_effect=lambda df, compound_set, identifiers: (
             df,
             pd.DataFrame(),
             pd.DataFrame({"x": [1]}),
@@ -879,15 +895,11 @@ def _patch_structure_submission_pipeline(monkeypatch, tmp_path, per_compound_df)
     return score_mock, aggregate_mock, to_parquet_mock, save_metadata_mock
 
 
-def test_process_new_structure_submission_full_failure_stops_after_phase_0(
+def test_process_new_structure_submission_full_failure_saves_no_scores(
     monkeypatch, tmp_path
 ):
-    """When every structure fails scoring at phase 0, phase 1 must not run.
-
-    Regression test: previously the phase loop had no ``break`` here, so a
-    submission that completely failed scoring still ran (and wrote S3 artifacts
-    for) phase 1 before being marked invalid.
-    """
+    """When every structure fails scoring, the submission is invalid and no
+    compound set is aggregated or saved."""
     failed_df = pd.DataFrame(
         {
             "Molecule_Name": [f"mol{i}" for i in range(STRUCTURE_DATASET_SIZE)],
@@ -901,16 +913,16 @@ def test_process_new_structure_submission_full_failure_stops_after_phase_0(
     asp.process_new_structure_submission(STRUCTURE_SK)
 
     assert score_mock.call_count == 1
-    assert [c.kwargs["phase"] for c in aggregate_mock.call_args_list] == [0]
-    assert to_parquet_mock.call_count == 3
+    assert aggregate_mock.call_count == 0
+    assert to_parquet_mock.call_count == 0
     saved_metadata = save_metadata_mock.call_args[0][1]
     assert saved_metadata["valid_submission"].iloc[0] == False  # noqa: E712
 
 
-def test_process_new_structure_submission_partial_failure_continues_to_phase_1(
+def test_process_new_structure_submission_partial_failure_still_saves_scores(
     monkeypatch, tmp_path
 ):
-    """A partial scoring failure at phase 0 still lets phase 1 run."""
+    """A partial scoring failure still aggregates and saves every set."""
     partial_df = pd.DataFrame(
         {
             "Molecule_Name": [f"mol{i}" for i in range(STRUCTURE_DATASET_SIZE)],
@@ -923,16 +935,19 @@ def test_process_new_structure_submission_partial_failure_continues_to_phase_1(
 
     asp.process_new_structure_submission(STRUCTURE_SK)
 
-    # #15: the structures are scored once; only the aggregation runs per phase.
+    # #15: the structures are scored once; only the aggregation runs per set.
     assert score_mock.call_count == 1
-    assert [c.kwargs["phase"] for c in aggregate_mock.call_args_list] == [0, 1]
+    assert [c.kwargs["compound_set"] for c in aggregate_mock.call_args_list] == [
+        "all",
+        "live",
+    ]
     assert to_parquet_mock.call_count == 6
     saved_metadata = save_metadata_mock.call_args[0][1]
     assert saved_metadata["valid_submission"].iloc[0] == True  # noqa: E712
 
 
 # ---------------------------------------------------------------------------
-# Structure track: score once, aggregate per phase (#15)
+# Structure track: score once, aggregate per compound set (#15)
 # ---------------------------------------------------------------------------
 
 
@@ -949,41 +964,45 @@ def _fake_single_structure_scores(monkeypatch, calls: list[str]):
     monkeypatch.setattr(evaluate_predictions, "score_single_structure", _score)
 
 
-def test_aggregating_once_scored_compounds_matches_scoring_per_phase(monkeypatch):
-    """Per-phase outputs are unchanged by scoring once and re-aggregating."""
+def test_aggregating_once_scored_compounds_matches_scoring_per_set(monkeypatch):
+    """Per-set outputs are unchanged by scoring once and re-aggregating."""
     calls: list[str] = []
     _fake_single_structure_scores(monkeypatch, calls)
     predicted = {f"mol{i}": f"/pred/mol{i}.pdb" for i in range(1, 7)}
     ground_truth = {f"mol{i}": f"/gt/mol{i}.pdb" for i in range(1, 7)}
     identifiers = pd.DataFrame(
-        {"Molecule_Name": list(predicted), "phase": [1, 2, 1, 2, 1, 2]}
+        {
+            "Molecule_Name": list(predicted),
+            "set": ["live", "hidden", "live", "hidden", "live", "hidden"],
+        }
     )
 
-    per_phase = {
-        phase: asp.score_structure_submission(
-            predicted, phase, ground_truth=ground_truth, identifiers=identifiers
+    sets = ["all", "live", "hidden"]
+    per_set = {
+        compound_set: asp.score_structure_submission(
+            predicted, compound_set, ground_truth=ground_truth, identifiers=identifiers
         )
-        for phase in [0, 1]
+        for compound_set in sets
     }
-    assert len(calls) == 12  # the old way: every compound scored for each phase
+    assert len(calls) == 18  # the old way: every compound scored for each set
 
     calls.clear()
     all_scores, _ = asp.score_structure_predictions(predicted, ground_truth)
-    for phase in [0, 1]:
+    for compound_set in sets:
         per_compound, bootstrap_df, averaged_df = asp.aggregate_structure_scores(
-            all_scores, phase, identifiers
+            all_scores, compound_set, identifiers
         )
-        expected = per_phase[phase]
+        expected = per_set[compound_set]
         pd.testing.assert_frame_equal(per_compound, expected[0])
         pd.testing.assert_frame_equal(bootstrap_df, expected[1])
         pd.testing.assert_frame_equal(averaged_df, expected[2])
     assert len(calls) == 6  # the new way: every compound scored once
 
-    phase_1 = asp.aggregate_structure_scores(all_scores, 1, identifiers)[0]
-    assert list(phase_1["Molecule_Name"]) == ["mol1", "mol3", "mol5"]
+    live = asp.aggregate_structure_scores(all_scores, "live", identifiers)[0]
+    assert list(live["Molecule_Name"]) == ["mol1", "mol3", "mol5"]
 
 
-def test_aggregate_structure_scores_coverage_is_per_phase():
+def test_aggregate_structure_scores_coverage_is_per_set():
     per_compound = pd.DataFrame(
         {
             "Molecule_Name": ["a", "b", "c", "d"],
@@ -993,12 +1012,14 @@ def test_aggregate_structure_scores_coverage_is_per_phase():
             "coverage": [1.0, 0.0, 1.0, 1.0],
         }
     )
-    identifiers = pd.DataFrame({"Molecule_Name": list("abcd"), "phase": [1, 1, 2, 2]})
-    _, _, all_avg = asp.aggregate_structure_scores(per_compound, 0, identifiers)
-    _, _, phase_1_avg = asp.aggregate_structure_scores(per_compound, 1, identifiers)
+    identifiers = pd.DataFrame(
+        {"Molecule_Name": list("abcd"), "set": ["live", "live", "hidden", "hidden"]}
+    )
+    _, _, all_avg = asp.aggregate_structure_scores(per_compound, "all", identifiers)
+    _, _, live_avg = asp.aggregate_structure_scores(per_compound, "live", identifiers)
     coverage_col = [c for c in all_avg.columns if "coverage" in c][0]
     assert all_avg[coverage_col].iloc[0] == pytest.approx(0.75)
-    assert phase_1_avg[coverage_col].iloc[0] == pytest.approx(0.5)
+    assert live_avg[coverage_col].iloc[0] == pytest.approx(0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -1011,14 +1032,14 @@ def test_structure_smiles_map_from_identifiers():
         {
             "Molecule_Name": ["a", "b", "c", "d"],
             "SMILES": ["CCO", None, "  ", "c1ccccc1"],
-            "phase": [1, 1, 2, 2],
+            "set": ["live", "live", "hidden", "hidden"],
         }
     )
     assert asp.structure_smiles_map(identifiers) == {"a": "CCO", "d": "c1ccccc1"}
 
 
 @pytest.mark.parametrize(
-    "identifiers", [None, pd.DataFrame({"Molecule_Name": ["a"], "phase": [1]})]
+    "identifiers", [None, pd.DataFrame({"Molecule_Name": ["a"], "set": ["live"]})]
 )
 def test_structure_smiles_map_without_smiles_is_none(identifiers):
     assert asp.structure_smiles_map(identifiers) is None
@@ -1035,7 +1056,7 @@ def test_process_new_structure_submission_passes_smiles_to_scoring(
         asp,
         "load_track_identifiers",
         lambda paths: pd.DataFrame(
-            {"Molecule_Name": ["mol1"], "SMILES": ["C1CNC1"], "phase": [1]}
+            {"Molecule_Name": ["mol1"], "SMILES": ["C1CNC1"], "set": ["live"]}
         ),
     )
 
@@ -1052,3 +1073,51 @@ def test_manifests_are_outside_the_delete_protected_prefix(paths):
     need the submissions/* delete protection lifted."""
     assert paths.manifest == f"manifests/{paths.track}"
     assert not paths.manifest.startswith("submissions/")
+
+
+# ---------------------------------------------------------------------------
+# Compound sets (#16)
+# ---------------------------------------------------------------------------
+
+IDENTIFIERS = pd.DataFrame(
+    {"Molecule_Name": ["a", "b", "c"], "set": ["live", "hidden", "live"]}
+)
+
+
+@pytest.mark.parametrize(
+    ("compound_set", "expected"),
+    [("all", None), ("live", {"a", "c"}), ("hidden", {"b"})],
+)
+def test_compound_set_ids(compound_set, expected):
+    assert asp.compound_set_ids(IDENTIFIERS, compound_set) == expected
+
+
+def test_compound_set_ids_rejects_unknown_values():
+    with pytest.raises(ValueError, match="other than live/hidden"):
+        asp.compound_set_ids(IDENTIFIERS.assign(set=["live", "2", "live"]), "live")
+    with pytest.raises(ValueError, match="Unknown compound set"):
+        asp.compound_set_ids(IDENTIFIERS, "phase_1")
+
+
+def _hidden_final_paths():
+    """Classification ranked on live compounds live and hidden ones at the end."""
+    spec = dataclasses.replace(
+        CLASSIFICATION_SPEC,
+        leaderboard_sets={"live": "live", "interim": "hidden", "final": "hidden"},
+    )
+    return dataclasses.replace(CLASSIFICATION_PATHS, spec=spec)
+
+
+def test_validation_metadata_has_a_uri_per_scored_set(
+    example_activity_predictions_metadata,
+):
+    paths = _hidden_final_paths()
+    metadata = asp.create_validation_metadata(
+        True, example_activity_predictions_metadata, CLASSIFICATION_SK, paths
+    )
+    assert "all_scores_uri" not in metadata.columns
+    assert metadata["hidden_scores_uri"].iloc[0] == (
+        f"s3://{S3_BUCKET}/scores/hidden/classification/new-user/submission-123/"
+        "averaged-results.parquet"
+    )
+    assert "live_scores_uri" in metadata.columns

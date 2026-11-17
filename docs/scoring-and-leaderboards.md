@@ -19,8 +19,8 @@ per-endpoint loop, and `create_track_leaderboards` (stage 4) builds it exactly o
 leaderboard instead of one per endpoint. See
 [structure-scoring.md](structure-scoring.md) for how structure's stage 1 actually
 works. See [phases-and-stages.md](phases-and-stages.md) for how the
-"live"/"interim"/"final" stage referenced here relates to the separate compound-set
-"phase" concept and the HF Space's `CURRENT_PHASE`.
+"live"/"interim"/"final" stage referenced here relates to compound sets
+(`live`/`hidden`/`all`) and the HF Space's `CURRENT_PHASE`.
 
 ```mermaid
 flowchart TD

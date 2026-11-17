@@ -19,6 +19,7 @@ from .config import (
     S3_BUCKET,
     STRUCTURE_PATHS,
     TrackPaths,
+    scores_uri_column,
 )
 from .leaderboard import FinalLeaderboard, LeaderboardEntry
 from .utils import validate_hf_username, validate_model_details
@@ -308,7 +309,8 @@ def _fetch_leaderboard_manifest_and_scores(
         cutoff = INTERIM_LEADERBOARD_DEADLINE
     else:  # stage == "final"
         cutoff = FINAL_LEADERBOARD_DEADLINE
-    uri_column = "phase_1_scores_uri" if stage == "live" else "all_scores_uri"
+    spec = _TRACK_PATHS[track].spec
+    uri_column = scores_uri_column(spec.leaderboard_sets[stage])
 
     manifest = create_manifest(track=track, only_latest=True, date_cutoff=cutoff)
     if manifest.empty:
@@ -465,20 +467,17 @@ def create_track_leaderboards(
     track_paths : TrackPaths
         The track to build for.
     stage : str
-        Which leaderboard to generate:
+        Which leaderboard to generate. Each stage ranks on the compound set the
+        track's ``TrackSpec.leaderboard_sets`` gives it.
 
-        - "live": auto-generated throughout the entire competition, scored on the
-          phase 1 compound subset, with no submission cutoff, no significance
-          testing, and no invalid-submission filtering — always reflects every
-          submission made so far.
-        - "interim": generated manually, scored on all compounds, limited to
-          submissions before ``INTERIM_LEADERBOARD_DEADLINE``. Includes
-          significance testing on the master leaderboard; does not filter out
-          invalid submissions.
-        - "final": generated manually, scored on all compounds, limited to
-          submissions before ``FINAL_LEADERBOARD_DEADLINE``. Includes
-          significance testing on the master leaderboard and filters out invalid
-          submissions.
+        - "live": auto-generated throughout the challenge, with no submission
+          cutoff, no significance testing and no invalid-submission filtering.
+        - "interim": generated manually, limited to submissions before
+          ``INTERIM_LEADERBOARD_DEADLINE``, with significance testing on the
+          master leaderboard.
+        - "final": generated manually, limited to submissions before
+          ``FINAL_LEADERBOARD_DEADLINE``, with significance testing on the master
+          leaderboard and invalid submissions removed.
     significant_method : Literal["CLD", "tiers"] | None
         Pairwise significance method ("CLD", "tiers") applied to the master
         leaderboard when ``stage`` is "interim" or "final". Ignored (no

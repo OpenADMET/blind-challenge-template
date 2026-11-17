@@ -15,6 +15,7 @@ from .config import (
     REGRESSION_PATHS,
     S3_BUCKET,
     STRUCTURE_PATHS,
+    scores_uri_column,
 )
 from .utils import _safeify_username
 
@@ -223,17 +224,15 @@ def create_manifest(
         "used_proprietary_data",
         "open_source_code",
         "model_report_link",
-        "all_scores_uri",
-        "phase_1_scores_uri",
     ]
-    select_clause = ", ".join(manifest_select_columns)
+    uri_columns = [scores_uri_column(c) for c in paths.spec.scored_sets]
+    select_clause = ", ".join(manifest_select_columns + uri_columns)
+    scored_clause = " AND ".join(f"{c} IS NOT NULL" for c in uri_columns)
     query = f"""
         SELECT {select_clause}
         FROM read_parquet('{manifest_path}', union_by_name=true)
         WHERE valid_submission = True
-          AND (
-              phase_1_scores_uri IS NOT NULL
-          )
+          AND {scored_clause}
     """
 
     logger.info(
