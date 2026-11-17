@@ -176,3 +176,36 @@ def test_create_track_leaderboards_ranks_by_the_track_spec(
         assert kwargs["primary_metric"] == track_paths.spec.primary_metric
         assert kwargs["metric_sort_ascending"] is ascending
         assert kwargs["additional_columns"] == extra
+
+
+@pytest.mark.parametrize(
+    ("require_report", "kept"),
+    [(True, ["good"]), (False, ["good", "no_report"])],
+)
+def test_final_stage_model_report_requirement(monkeypatch, require_report, kept):
+    """REQUIRE_MODEL_REPORT decides whether entries without a reachable model
+    report are dropped from the final leaderboard. Unknown usernames always are."""
+    import backend.aws_leaderboards as al
+
+    manifest = pd.DataFrame(
+        {
+            "username": ["good", "no_report", "ghost"],
+            "model_report_link": ["https://example.org/r", "", "https://example.org/r"],
+            "all_scores_uri": ["s3://b/1", "s3://b/2", "s3://b/3"],
+        }
+    )
+    monkeypatch.setattr(al, "create_manifest", lambda **kwargs: manifest.copy())
+    monkeypatch.setattr(al, "validate_hf_username", lambda name: name != "ghost")
+    monkeypatch.setattr(
+        al,
+        "validate_model_details",
+        lambda link: link if link else "Not submitted",
+    )
+    monkeypatch.setattr(al, "get_averaged_scores_for_leaderboard", lambda m: {})
+    monkeypatch.setattr(al, "REQUIRE_MODEL_REPORT", require_report)
+
+    result, _, _ = al._fetch_leaderboard_manifest_and_scores(
+        track="regression", stage="final", remove_invalid=True, with_bootstrap=False
+    )
+
+    assert list(result["username"]) == kept

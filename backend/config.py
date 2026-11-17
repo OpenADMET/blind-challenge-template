@@ -108,8 +108,8 @@ PROTEIN_DATA_FILE = "protein_structure.pdb"
 class TrackSpec:
     """What a competition track is: its data, endpoints, metrics and ranking.
 
-    Mirrored in ``hf_space/config.py``; ``tests/test_config_drift.py`` checks the
-    two agree.
+    Mirrored in ``hf_space/config.py``; ``tests/backend/test_config_drift.py``
+    checks the two agree.
 
     Attributes
     ----------
@@ -221,6 +221,10 @@ STRUCTURE_SPEC = TrackSpec(
 TRACK_SPECS: dict[str, TrackSpec] = {
     spec.track: spec for spec in (REGRESSION_SPEC, CLASSIFICATION_SPEC, STRUCTURE_SPEC)
 }
+
+# Drop entries without a reachable model report link from the final leaderboard.
+# Must mirror hf_space.config.REQUIRE_MODEL_REPORT.
+REQUIRE_MODEL_REPORT = True
 
 # Ground-truth and cross-track entries-list S3 prefixes, shared by every track.
 GROUND_TRUTH_PREFIX = "ground_truth"

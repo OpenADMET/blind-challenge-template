@@ -3,9 +3,10 @@
 import pandas as pd
 import pytest
 from config import (
-    ACTIVITY_METRIC_DISPLAY_NAMES,
+    REGRESSION_SPEC,
     REGRESSION_TRACK,
     STRUCTURE_TRACK,
+    metric_display_names,
 )
 
 import leaderboards
@@ -26,7 +27,7 @@ def _activity_csv() -> pd.DataFrame:
         "open_source_code": [False, True, False],
     }
     # Written in reverse of the display order, which must be restored.
-    for i, metric in enumerate(reversed(list(ACTIVITY_METRIC_DISPLAY_NAMES))):
+    for i, metric in enumerate(reversed(list(metric_display_names(REGRESSION_SPEC)))):
         data[f"{metric}_mean"] = [0.123456 + i, 0.2, 0.3]
         data[f"{metric}_std"] = [0.01, 0.01, 0.01]
     return pd.DataFrame(data)
@@ -121,7 +122,7 @@ def _load_regression(prefix: str = "MA-") -> pd.DataFrame:
     return leaderboards.load_activity_leaderboard(
         "live",
         REGRESSION_TRACK,
-        ACTIVITY_METRIC_DISPLAY_NAMES,
+        metric_display_names(REGRESSION_SPEC),
         metric_prefix=prefix,
     )
 
@@ -133,7 +134,7 @@ def test_load_activity_leaderboard_display_table(s3_files):
     df = _load_regression()
 
     assert requested == ["leaderboard/live/regression/MA_leaderboard_latest.csv"]
-    metric_cols = [f"MA-{d}" for d in ACTIVITY_METRIC_DISPLAY_NAMES.values()]
+    metric_cols = [f"MA-{d}" for d in metric_display_names(REGRESSION_SPEC).values()]
     assert list(df.columns) == [
         "Rank",
         "Username",
@@ -167,7 +168,7 @@ def test_load_activity_leaderboard_missing_file_shows_empty_table(s3_files):
         "Model Report Link",
         "Proprietary Data",
         "Open Code",
-        *ACTIVITY_METRIC_DISPLAY_NAMES.values(),
+        *metric_display_names(REGRESSION_SPEC).values(),
     ]
 
 
@@ -178,20 +179,23 @@ def test_download_activity_leaderboard_keeps_std_and_raw_alias(s3_files):
     files["leaderboard/final/regression/MA_leaderboard_latest.csv"] = csv
 
     path = leaderboards.download_activity_leaderboard(
-        "final", REGRESSION_TRACK, ACTIVITY_METRIC_DISPLAY_NAMES, metric_prefix="MA-"
+        "final",
+        REGRESSION_TRACK,
+        metric_display_names(REGRESSION_SPEC),
+        metric_prefix="MA-",
     )
     df = pd.read_csv(path)
 
     assert df.loc[0, "Username"] == "Fish & Chips"  # not HTML-escaped in the CSV
     assert "MA-MAE std" in df.columns
-    assert df.loc[1, f"MA-{list(ACTIVITY_METRIC_DISPLAY_NAMES.values())[-1]}"] == (
-        pytest.approx(0.123456)
-    )
+    assert df.loc[
+        1, f"MA-{list(metric_display_names(REGRESSION_SPEC).values())[-1]}"
+    ] == (pytest.approx(0.123456))
 
 
 def test_download_activity_leaderboard_missing_file_gives_empty_csv(s3_files):
     path = leaderboards.download_activity_leaderboard(
-        "final", REGRESSION_TRACK, ACTIVITY_METRIC_DISPLAY_NAMES
+        "final", REGRESSION_TRACK, metric_display_names(REGRESSION_SPEC)
     )
     assert pd.read_csv(path).empty
 

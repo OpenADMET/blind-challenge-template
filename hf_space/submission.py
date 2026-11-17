@@ -32,16 +32,17 @@ import pandas as pd
 from config import (
     ACTIVITY_DATASET_SIZE,
     AWS_DEFAULT_REGION,
-    CLASSIFICATION_ENDPOINTS,
     CLASSIFICATION_NAME,
+    CLASSIFICATION_SPEC,
     CLASSIFICATION_TRACK,
     DATASET_DOWNLOAD_LINK,
     HOURS_BETWEEN_SUBMISSIONS,
     MIN_PREDICTION_STD,
-    REGRESSION_ENDPOINTS,
     REGRESSION_NAME,
+    REGRESSION_SPEC,
     REGRESSION_TRACK,
     REQUIRED_CLASSIFICATION_COLUMNS,
+    REQUIRE_MODEL_REPORT,
     REQUIRED_REGRESSION_COLUMNS,
     S3_BUCKET,
     STRUCTURE_DATASET_SIZE,
@@ -166,7 +167,7 @@ If you were unable to get your submission in before the deadline, please contact
 
         regression_markdown = f"""
 #### Regression Track
-Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} rows** and {len(REQUIRED_REGRESSION_COLUMNS)} columns — a numeric prediction for all {len(REGRESSION_ENDPOINTS)} regression endpoints, for every compound, no `NaN` or `inf`:
+Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} rows** and {len(REQUIRED_REGRESSION_COLUMNS)} columns — a numeric prediction for all {len(REGRESSION_SPEC.endpoints)} regression endpoints, for every compound, no `NaN` or `inf`:
 
 {SUBMISSION_SCHEMA_TABLE_REGRESSION_MD}
 
@@ -175,7 +176,7 @@ Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} ro
 """
         classification_markdown = f"""
 #### Classification Track
-Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} rows** and {len(REQUIRED_CLASSIFICATION_COLUMNS)} columns — a boolean prediction for each of the {len(CLASSIFICATION_ENDPOINTS)} classification endpoints, for every compound:
+Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} rows** and {len(REQUIRED_CLASSIFICATION_COLUMNS)} columns — a boolean prediction for each of the {len(CLASSIFICATION_SPEC.endpoints)} classification endpoints, for every compound:
 
 {SUBMISSION_SCHEMA_TABLE_CLASSIFICATION_MD}
 
@@ -251,9 +252,14 @@ Submit a **`.zip`** archive containing exactly **{STRUCTURE_DATASET_SIZE} `.pdb`
                 model_tag = gr.Textbox(
                     label="Method Report Link",
                     placeholder="https://...",
-                    info="Required before the deadline to appear on the final "
-                    "leaderboard. Required if you have checked the open-source code "
-                    "box. Must be a reachable link that starts with 'https://'.",
+                    info=(
+                        "Required before the deadline to appear on the final "
+                        "leaderboard. "
+                        if REQUIRE_MODEL_REPORT
+                        else ""
+                    )
+                    + "Required if you have checked the open-source code box. Must "
+                    "be a reachable link that starts with 'https://'.",
                 )
 
             # --- Column 3: Track & file ---
@@ -625,7 +631,7 @@ def submit_predictions(
         assert (
             df is not None
         )  # guaranteed by _read_tabular_submission when error is None
-        for col in REGRESSION_ENDPOINTS:
+        for col in REGRESSION_SPEC.endpoints:
             if df[col].isnull().any():
                 return gr.update(
                     value=f"Error: {col} column contains NaN values.", visible=True
@@ -667,7 +673,7 @@ def submit_predictions(
         assert (
             df is not None
         )  # guaranteed by _read_tabular_submission when error is None
-        for col in CLASSIFICATION_ENDPOINTS:
+        for col in CLASSIFICATION_SPEC.endpoints:
             if df[col].isnull().any():
                 return gr.update(
                     value=f"Error: {col} column contains NaN values.", visible=True

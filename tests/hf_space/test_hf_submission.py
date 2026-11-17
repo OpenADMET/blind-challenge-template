@@ -9,9 +9,9 @@ import pytest
 import submission
 from config import (
     ACTIVITY_DATASET_SIZE,
-    CLASSIFICATION_ENDPOINTS,
+    CLASSIFICATION_SPEC,
     HOURS_BETWEEN_SUBMISSIONS,
-    REGRESSION_ENDPOINTS,
+    REGRESSION_SPEC,
     REQUIRED_REGRESSION_COLUMNS,
     STRUCTURE_DATASET_SIZE,
 )
@@ -126,14 +126,17 @@ def _identifiers(n: int = ACTIVITY_DATASET_SIZE) -> dict[str, list[str]]:
 def _regression_df(n: int = ACTIVITY_DATASET_SIZE) -> pd.DataFrame:
     rng = np.random.default_rng(0)
     return pd.DataFrame(
-        {**_identifiers(n), **{c: rng.normal(5, 1, n) for c in REGRESSION_ENDPOINTS}}
+        {
+            **_identifiers(n),
+            **{c: rng.normal(5, 1, n) for c in REGRESSION_SPEC.endpoints},
+        }
     )
 
 
 def _classification_df(n: int = ACTIVITY_DATASET_SIZE) -> pd.DataFrame:
     pattern = [True, False] * (n // 2) + [True] * (n % 2)
     return pd.DataFrame(
-        {**_identifiers(n), **{c: pattern for c in CLASSIFICATION_ENDPOINTS}}
+        {**_identifiers(n), **{c: pattern for c in CLASSIFICATION_SPEC.endpoints}}
     )
 
 
@@ -230,12 +233,15 @@ def test_read_tabular_submission_checks_row_count(tmp_path):
 
 def test_read_tabular_submission_names_missing_columns(tmp_path):
     path = _write(
-        _regression_df().drop(columns=[REGRESSION_ENDPOINTS[0]]), tmp_path / "p.csv"
+        _regression_df().drop(columns=[REGRESSION_SPEC.endpoints[0]]),
+        tmp_path / "p.csv",
     )
     _, error = submission._read_tabular_submission(
         submission.Path(path), REQUIRED_REGRESSION_COLUMNS, "Regression"
     )
-    assert error == f"Error: Missing required columns: { {REGRESSION_ENDPOINTS[0]} }"
+    assert (
+        error == f"Error: Missing required columns: { {REGRESSION_SPEC.endpoints[0]} }"
+    )
 
 
 # --- _format_submission_time_message --------------------------------------------
@@ -404,16 +410,18 @@ def test_submit_regression_rejects_bad_values(
     tmp_path, known_user, no_upload, no_cooldown, value, expected
 ):
     df = _regression_df()
-    df.loc[3, REGRESSION_ENDPOINTS[1]] = value
+    df.loc[3, REGRESSION_SPEC.endpoints[1]] = value
     result = _submit(file_input=_write(df, tmp_path / "p.parquet"))
-    assert result["value"] == f"Error: {REGRESSION_ENDPOINTS[1]} column {expected}."
+    assert (
+        result["value"] == f"Error: {REGRESSION_SPEC.endpoints[1]} column {expected}."
+    )
 
 
 def test_submit_regression_rejects_constant_predictions(
     tmp_path, known_user, no_upload, no_cooldown
 ):
     df = _regression_df()
-    df[REGRESSION_ENDPOINTS[0]] = 5.0
+    df[REGRESSION_SPEC.endpoints[0]] = 5.0
     result = _submit(file_input=_write(df, tmp_path / "p.csv"))
     assert "constant or near-constant" in result["value"]
 
@@ -422,8 +430,10 @@ def test_submit_classification_rejects_non_binary(
     tmp_path, known_user, no_upload, no_cooldown
 ):
     df = _classification_df()
-    df[CLASSIFICATION_ENDPOINTS[0]] = df[CLASSIFICATION_ENDPOINTS[0]].astype(int)
-    df.loc[0, CLASSIFICATION_ENDPOINTS[0]] = 2
+    df[CLASSIFICATION_SPEC.endpoints[0]] = df[CLASSIFICATION_SPEC.endpoints[0]].astype(
+        int
+    )
+    df.loc[0, CLASSIFICATION_SPEC.endpoints[0]] = 2
     result = _submit(
         track_select="Classification Prediction",
         file_input=_write(df, tmp_path / "p.csv"),
@@ -435,7 +445,7 @@ def test_submit_classification_rejects_single_class(
     tmp_path, known_user, no_upload, no_cooldown
 ):
     df = _classification_df()
-    df[CLASSIFICATION_ENDPOINTS[1]] = False
+    df[CLASSIFICATION_SPEC.endpoints[1]] = False
     result = _submit(
         track_select="Classification Prediction",
         file_input=_write(df, tmp_path / "p.csv"),

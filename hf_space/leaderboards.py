@@ -7,22 +7,21 @@ from functools import partial
 import gradio as gr
 import pandas as pd
 from config import (
-    ACTIVITY_METRIC_DISPLAY_NAMES,
-    CLASSIFICATION_ENDPOINTS,
-    CLASSIFICATION_METRIC_DISPLAY_NAMES,
     CLASSIFICATION_NAME,
+    CLASSIFICATION_SPEC,
     CLASSIFICATION_TRACK,
     LEADERBOARD_URI_FORMAT,
+    LeaderboardStage,
     MACRO_ENDPOINT_LABEL,
-    REGRESSION_ENDPOINTS,
     REGRESSION_NAME,
+    REGRESSION_SPEC,
     REGRESSION_TRACK,
-    STRUCTURE_ENDPOINTS,
     STRUCTURE_NAME,
+    STRUCTURE_SPEC,
     STRUCTURE_TRACK,
     TRACK_VISIBILITY,
-    LeaderboardStage,
     TrackVisibility,
+    metric_display_names,
 )
 from gradio_leaderboard import ColumnFilter, Leaderboard
 from loguru import logger
@@ -76,8 +75,8 @@ def format_leaderboard_uri(
     leaderboard_type : str
         "live", "interim", or "final".
     endpoint_slug : str
-        For regression/classification, a REGRESSION_ENDPOINTS /
-        CLASSIFICATION_ENDPOINTS entry (e.g. "ENDPOINT_1") to load that endpoint's
+        For regression/classification, a REGRESSION_SPEC.endpoints /
+        CLASSIFICATION_SPEC.endpoints entry (e.g. "ENDPOINT_1") to load that endpoint's
         own leaderboard instead of the track's master (macro-ranked) leaderboard.
         Defaults to ``MACRO_ENDPOINT_LABEL`` ("MA"), which loads the master.
     version : str
@@ -377,10 +376,10 @@ def load_activity_leaderboard(
 def load_structure_leaderboard(
     leaderboard_type: str = "live",
     track: str = STRUCTURE_TRACK,
-    endpoint_slug: str = STRUCTURE_ENDPOINTS[0],
+    endpoint_slug: str = STRUCTURE_SPEC.endpoints[0],
 ) -> pd.DataFrame:
     """Load a structure leaderboard from S3 — the track's master, or a single
-    endpoint's own (today, STRUCTURE_ENDPOINTS has exactly one entry, so there is no
+    endpoint's own (today, STRUCTURE_SPEC.endpoints has exactly one entry, so there is no
     master leaderboard file yet — see _add_structure_track_tabs).
     """
     logger.info("Refreshing structure leaderboard ({})...", endpoint_slug)
@@ -448,7 +447,7 @@ def download_activity_leaderboard(
 def download_structure_leaderboard(
     leaderboard_type: str = "live",
     track: str = STRUCTURE_TRACK,
-    endpoint_slug: str = STRUCTURE_ENDPOINTS[0],
+    endpoint_slug: str = STRUCTURE_SPEC.endpoints[0],
 ) -> str:
     """Write the structure leaderboard to a temp CSV and return the file path."""
     try:
@@ -678,7 +677,7 @@ def _add_structure_track_tabs(
 ) -> dict[str, Leaderboard]:
     """Render the structure track's leaderboard(s) — same Overall/per-endpoint split
     as ``_add_activity_track_tabs``, for consistency if structure ever gains a second
-    endpoint. Today STRUCTURE_ENDPOINTS has exactly one entry, so this always takes
+    endpoint. Today STRUCTURE_SPEC.endpoints has exactly one entry, so this always takes
     the single-leaderboard branch.
     """
     lbs: dict[str, Leaderboard] = {}
@@ -789,28 +788,28 @@ def _add_leaderboard_tabs(
 
     with gr.Tabs():
         regression_lbs: dict[str, Leaderboard] = {}
-        if shown(REGRESSION_TRACK, REGRESSION_ENDPOINTS):
+        if shown(REGRESSION_TRACK, REGRESSION_SPEC.endpoints):
             with gr.TabItem(REGRESSION_NAME):
                 regression_lbs = _add_activity_track_tabs(
                     leaderboard_type,
                     REGRESSION_TRACK,
-                    REGRESSION_ENDPOINTS,
-                    ACTIVITY_METRIC_DISPLAY_NAMES,
+                    REGRESSION_SPEC.endpoints,
+                    metric_display_names(REGRESSION_SPEC),
                 )
         classification_lbs: dict[str, Leaderboard] = {}
-        if shown(CLASSIFICATION_TRACK, CLASSIFICATION_ENDPOINTS):
+        if shown(CLASSIFICATION_TRACK, CLASSIFICATION_SPEC.endpoints):
             with gr.TabItem(CLASSIFICATION_NAME):
                 classification_lbs = _add_activity_track_tabs(
                     leaderboard_type,
                     CLASSIFICATION_TRACK,
-                    CLASSIFICATION_ENDPOINTS,
-                    CLASSIFICATION_METRIC_DISPLAY_NAMES,
+                    CLASSIFICATION_SPEC.endpoints,
+                    metric_display_names(CLASSIFICATION_SPEC),
                 )
         structure_lbs: dict[str, Leaderboard] = {}
-        if shown(STRUCTURE_TRACK, STRUCTURE_ENDPOINTS):
+        if shown(STRUCTURE_TRACK, STRUCTURE_SPEC.endpoints):
             with gr.TabItem(STRUCTURE_NAME):
                 structure_lbs = _add_structure_track_tabs(
-                    leaderboard_type, STRUCTURE_TRACK, STRUCTURE_ENDPOINTS
+                    leaderboard_type, STRUCTURE_TRACK, STRUCTURE_SPEC.endpoints
                 )
 
         if leaderboard_type == "live":
@@ -821,7 +820,7 @@ def _add_leaderboard_tabs(
                 leaderboard_type,
                 REGRESSION_TRACK,
                 regression_lbs,
-                ACTIVITY_METRIC_DISPLAY_NAMES,
+                metric_display_names(REGRESSION_SPEC),
             )
             _wire_activity_timer(
                 classification_timer,
@@ -829,7 +828,7 @@ def _add_leaderboard_tabs(
                 leaderboard_type,
                 CLASSIFICATION_TRACK,
                 classification_lbs,
-                CLASSIFICATION_METRIC_DISPLAY_NAMES,
+                metric_display_names(CLASSIFICATION_SPEC),
             )
             _wire_structure_timer(
                 structure_timer, demo, leaderboard_type, STRUCTURE_TRACK, structure_lbs

@@ -7,7 +7,7 @@ below when standing up a new challenge.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 # -------------------------------- Global Params ---------------------------------------
@@ -37,9 +37,9 @@ STRUCTURE_TRACK = "structure"
 # {track} is one of REGRESSION_TRACK / CLASSIFICATION_TRACK / STRUCTURE_TRACK.
 # {endpoint_slug} is MACRO_ENDPOINT_LABEL ("MA") for a track's master (macro-ranked)
 # leaderboard (only present once a track has more than one endpoint), a
-# REGRESSION_ENDPOINTS/CLASSIFICATION_ENDPOINTS entry (e.g.
+# REGRESSION_SPEC.endpoints/CLASSIFICATION_SPEC.endpoints entry (e.g.
 # "ENDPOINT_1") for that endpoint's own leaderboard, or
-# STRUCTURE_ENDPOINTS[0] ("structure") for the structure track's one leaderboard —
+# STRUCTURE_SPEC.endpoints[0] ("structure") for the structure track's one leaderboard —
 # see leaderboards.format_leaderboard_uri.
 # {version} is "latest" or an ISO timestamp.
 # Every leaderboard file (all tracks, all stages) follows this one convention — must
@@ -65,69 +65,152 @@ TUTORIAL_LINK = "https://github.com/<ORG>/<Challenge-Tutorial>"
 # scores for that bootstrap sample. Must mirror backend.config.MACRO_ENDPOINT_LABEL.
 MACRO_ENDPOINT_LABEL = "MA"
 
-# -------------------------------- Activity Track Params -------------------------------
+# -------------------------------- Track definitions ------------------------------------
 
-# Dataset sizes and required columns
-# TODO: must equal backend.config.ACTIVITY_DATASET_SIZE.
-ACTIVITY_DATASET_SIZE = 750
 IDENTIFIER_COLUMNS = ["SMILES", "Molecule_Name"]
 
-# Drives one leaderboard tab per activity endpoint. Must mirror
-# backend.config.ACTIVITY_ENDPOINTS (same names, same order).
-# TODO: rename *_NAME to this challenge's track labels, and the endpoint lists to
-# match backend/config.py exactly.
+# TODO: must equal backend.config.ACTIVITY_DATASET_SIZE / STRUCTURE_DATASET_SIZE
+# (the drift test checks). Regression and classification share the activity dataset.
+ACTIVITY_DATASET_SIZE = 750
+STRUCTURE_DATASET_SIZE = 184
+
+# Entries on the final leaderboard must have a reachable model report link. Must
+# mirror backend.config.REQUIRE_MODEL_REPORT.
+REQUIRE_MODEL_REPORT = True
+
+
+@dataclass(frozen=True)
+class TrackSpec:
+    """What a competition track is. Mirrors ``backend.config.TrackSpec``.
+
+    ``tests/backend/test_config_drift.py`` checks every field matches the backend's.
+    See the backend class for what each field means.
+
+    Attributes
+    ----------
+    track : str
+        Track name, as in S3 prefixes.
+    dataset : str
+        Ground-truth dataset the track scores against.
+    endpoints : list[str]
+        Endpoint names, in display order; one leaderboard tab each.
+    metrics : list[str]
+        Metric names, in display order.
+    primary_metric : str
+        The metric leaderboards are ranked by.
+    higher_is_better : bool
+        Direction of ``primary_metric``.
+    dataset_size : int
+        Number of compounds a submission must cover.
+    extra_columns : tuple[str, ...]
+        Additional averaged-results columns carried onto the leaderboard.
+
+    """
+
+    track: str
+    dataset: str
+    endpoints: list[str]
+    metrics: list[str]
+    primary_metric: str
+    higher_is_better: bool
+    dataset_size: int
+    extra_columns: tuple[str, ...] = field(default=())
+
+    def __post_init__(self) -> None:
+        """Reject a spec that can't be ranked or displayed consistently.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If ``primary_metric`` isn't one of ``metrics``, a metric or endpoint is
+            listed twice, or ``dataset_size`` is negative.
+
+        """
+        if self.primary_metric not in self.metrics:
+            raise ValueError(
+                f"{self.track}: primary_metric {self.primary_metric!r} is not one of "
+                f"its metrics {self.metrics}"
+            )
+        for name, values in (("metrics", self.metrics), ("endpoints", self.endpoints)):
+            duplicates = sorted({v for v in values if values.count(v) > 1})
+            if duplicates:
+                raise ValueError(f"{self.track}: duplicate {name} {duplicates}")
+        if self.dataset_size < 0:
+            raise ValueError(f"{self.track}: dataset_size must not be negative")
+
+
+# TODO: must match backend/config.py's specs exactly (the drift test checks).
+REGRESSION_SPEC = TrackSpec(
+    track=REGRESSION_TRACK,
+    dataset="activity",
+    endpoints=["ENDPOINT_1", "ENDPOINT_2", "ENDPOINT_3", "ENDPOINT_4"],
+    metrics=["ST-RAE", "MAE", "R2", "Spearman_R", "Kendall_Tau"],
+    primary_metric="ST-RAE",
+    higher_is_better=False,
+    dataset_size=ACTIVITY_DATASET_SIZE,
+)
+CLASSIFICATION_SPEC = TrackSpec(
+    track=CLASSIFICATION_TRACK,
+    dataset="activity",
+    endpoints=["ENDPOINT_5", "ENDPOINT_6"],
+    metrics=["MCC", "Accuracy", "Precision", "Recall", "F1"],
+    primary_metric="MCC",
+    higher_is_better=True,
+    dataset_size=ACTIVITY_DATASET_SIZE,
+)
+STRUCTURE_SPEC = TrackSpec(
+    track=STRUCTURE_TRACK,
+    dataset="structure",
+    endpoints=["structure"],
+    metrics=["LDDT-PLI", "BiSyRMSD", "LDDT-LP"],
+    primary_metric="LDDT-PLI",
+    higher_is_better=True,
+    dataset_size=STRUCTURE_DATASET_SIZE,
+    extra_columns=("coverage_mean",),
+)
+TRACK_SPECS: dict[str, TrackSpec] = {
+    spec.track: spec for spec in (REGRESSION_SPEC, CLASSIFICATION_SPEC, STRUCTURE_SPEC)
+}
+
+# TODO: rename to this challenge's track labels (shown on the Submit tab and as
+# leaderboard tab titles).
 REGRESSION_NAME = "Regression Prediction"
-REGRESSION_ENDPOINTS = [
-    "ENDPOINT_1",
-    "ENDPOINT_2",
-    "ENDPOINT_3",
-    "ENDPOINT_4",
-]
 CLASSIFICATION_NAME = "Classification Prediction"
-CLASSIFICATION_ENDPOINTS = [
-    "ENDPOINT_5",
-    "ENDPOINT_6",
-]
+STRUCTURE_NAME = "Structure Prediction"
 
-# Regression and classification are independent submission tracks (see
-# render_submission_tab / Submission.track) — REQUIRED_REGRESSION_COLUMNS and
-# REQUIRED_CLASSIFICATION_COLUMNS drive each upload's own validation.
-# ACTIVITY_DATASET_SIZE is the shared row-count both tracks validate against (same
-# compounds, different columns) — not a submission-upload concept.
-REQUIRED_REGRESSION_COLUMNS = IDENTIFIER_COLUMNS + REGRESSION_ENDPOINTS
-REQUIRED_CLASSIFICATION_COLUMNS = IDENTIFIER_COLUMNS + CLASSIFICATION_ENDPOINTS
+REQUIRED_REGRESSION_COLUMNS = IDENTIFIER_COLUMNS + REGRESSION_SPEC.endpoints
+REQUIRED_CLASSIFICATION_COLUMNS = IDENTIFIER_COLUMNS + CLASSIFICATION_SPEC.endpoints
 
-# Metric names as they appear (unprefixed, once narrowed to a single endpoint) in a
-# leaderboard's columns, and how each should be labelled in the UI, in display order
-# (primary/sort metric RAE first). Must mirror backend.config.ACTIVITY_METRICS.
-ACTIVITY_METRIC_DISPLAY_NAMES = {
-    "ST-RAE": "ST-RAE",
-    "MAE": "MAE",
+# How each metric is labelled on the leaderboards; a metric not listed is shown
+# under its own name.
+METRIC_DISPLAY_NAMES: dict[str, str] = {
     "R2": "R²",
     "Spearman_R": "Spearman's ρ",
     "Kendall_Tau": "Kendall's τ",
-}
-
-# Same idea, for the classification track's leaderboard columns. MCC is the
-# primary/sort metric, listed first. Must mirror backend.config.CLASSIFICATION_METRICS.
-CLASSIFICATION_METRIC_DISPLAY_NAMES = {
-    "MCC": "MCC",
-    "Accuracy": "Accuracy",
-    "Precision": "Precision",
-    "Recall": "Recall",
     "F1": "F1 Score",
 }
 
-# -------------------------------- Structure Track Params -------------------------------
 
-# TODO: must equal backend.config.STRUCTURE_DATASET_SIZE (0 / unused if this
-# challenge has no structure track).
-STRUCTURE_DATASET_SIZE = 184
+def metric_display_names(spec: TrackSpec) -> dict[str, str]:
+    """Map a track's metric names to their leaderboard labels, in display order.
 
-# Structure track's single leaderboard slug. Must mirror
-# backend.config.STRUCTURE_ENDPOINTS.
-STRUCTURE_NAME = "Structure Prediction"
-STRUCTURE_ENDPOINTS = ["structure"]
+    Parameters
+    ----------
+    spec : TrackSpec
+        The track.
+
+    Returns
+    -------
+    dict[str, str]
+        Metric name to label, in ``spec.metrics`` order.
+
+    """
+    return {m: METRIC_DISPLAY_NAMES.get(m, m) for m in spec.metrics}
+
 
 # ---------------------------------- Track visibility ----------------------------------
 
@@ -174,7 +257,7 @@ class TrackVisibility:
 
 
 # TODO: set for this challenge, and edit the page markdown below to match. A track
-# with an empty endpoint list (e.g. CLASSIFICATION_ENDPOINTS = []) is never shown,
+# with an empty endpoint list (e.g. CLASSIFICATION_SPEC.endpoints = []) is never shown,
 # whatever its visibility. CURRENT_PHASE separately decides which leaderboard stages
 # exist at all.
 TRACK_VISIBILITY: dict[str, TrackVisibility] = {
@@ -207,7 +290,7 @@ def _endpoint_schema_row(endpoint: str, kind: str) -> str:
 
 # Single source of truth for each track's submission file column schema — shown on
 # both the Submit tab (submission.py) and in the FAQ, generated from
-# REGRESSION_ENDPOINTS / CLASSIFICATION_ENDPOINTS so the two can't drift out of sync
+# REGRESSION_SPEC.endpoints / CLASSIFICATION_SPEC.endpoints so the two can't drift out of sync
 # with each other or with the actual validation logic (which checks
 # REQUIRED_REGRESSION_COLUMNS/REQUIRED_CLASSIFICATION_COLUMNS).
 def _schema_table_md(rows: list[str]) -> str:
@@ -227,10 +310,10 @@ def _schema_table_md(rows: list[str]) -> str:
 
 
 SUBMISSION_SCHEMA_TABLE_REGRESSION_MD = _schema_table_md(
-    [_endpoint_schema_row(e, "regression") for e in REGRESSION_ENDPOINTS]
+    [_endpoint_schema_row(e, "regression") for e in REGRESSION_SPEC.endpoints]
 )
 SUBMISSION_SCHEMA_TABLE_CLASSIFICATION_MD = _schema_table_md(
-    [_endpoint_schema_row(e, "classification") for e in CLASSIFICATION_ENDPOINTS]
+    [_endpoint_schema_row(e, "classification") for e in CLASSIFICATION_SPEC.endpoints]
 )
 
 
@@ -253,14 +336,14 @@ def _csv_example_md(
 
 
 SUBMISSION_CSV_EXAMPLE_REGRESSION_MD = _csv_example_md(
-    REGRESSION_ENDPOINTS,
+    REGRESSION_SPEC.endpoints,
     [
         (("CCO", "OADMET-00000"), [6.23, 5.94, 6.78, 5.41]),
         (("c1ccccc1", "OADMET-00001"), [5.87, 6.10, 5.55, 6.02]),
     ],
 )
 SUBMISSION_CSV_EXAMPLE_CLASSIFICATION_MD = _csv_example_md(
-    CLASSIFICATION_ENDPOINTS,
+    CLASSIFICATION_SPEC.endpoints,
     [
         (("CCO", "OADMET-00000"), [False, True]),
         (("c1ccccc1", "OADMET-00001"), [True, False]),
@@ -354,7 +437,7 @@ generated automatically from config further down this tab.>
 
 ### Classification Track
 <What is predicted and the primary + secondary metrics. Delete this section if
-CLASSIFICATION_ENDPOINTS is empty.>
+CLASSIFICATION_SPEC.endpoints is empty.>
 
 ### Structure Track
 <Pose-prediction task description. Delete this section if there is no structure

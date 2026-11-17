@@ -8,13 +8,13 @@ paths, which matter most when Gradio or the leaderboard component is upgraded.
 import gradio as gr
 import pytest
 from config import (
-    CLASSIFICATION_ENDPOINTS,
     CLASSIFICATION_NAME,
+    CLASSIFICATION_SPEC,
     MACRO_ENDPOINT_LABEL,
-    REGRESSION_ENDPOINTS,
     REGRESSION_NAME,
-    STRUCTURE_ENDPOINTS,
+    REGRESSION_SPEC,
     STRUCTURE_NAME,
+    STRUCTURE_SPEC,
     TRACK_VISIBILITY,
     TrackVisibility,
 )
@@ -45,9 +45,9 @@ ALL_VISIBLE = {
 def _expected_keys(stage: str, visibility: dict[str, TrackVisibility]) -> set[str]:
     keys = set()
     for track, endpoints in [
-        ("regression", REGRESSION_ENDPOINTS),
-        ("classification", CLASSIFICATION_ENDPOINTS),
-        ("structure", STRUCTURE_ENDPOINTS),
+        ("regression", REGRESSION_SPEC.endpoints),
+        ("classification", CLASSIFICATION_SPEC.endpoints),
+        ("structure", STRUCTURE_SPEC.endpoints),
     ]:
         if not endpoints or not visibility[track].on_leaderboard(stage):
             continue

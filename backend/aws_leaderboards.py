@@ -15,6 +15,7 @@ from .config import (
     INTERIM_LEADERBOARD_DEADLINE,
     MACRO_ENDPOINT_LABEL,
     REGRESSION_PATHS,
+    REQUIRE_MODEL_REPORT,
     S3_BUCKET,
     STRUCTURE_PATHS,
     TrackPaths,
@@ -316,14 +317,15 @@ def _fetch_leaderboard_manifest_and_scores(
     if remove_invalid:
         logger.info("Removing invalid submissions from leaderboard")
         manifest["valid_hf_username"] = manifest.username.apply(validate_hf_username)
-        manifest["valid_model_details"] = manifest.model_report_link.apply(
-            validate_model_details
-        )
         start_len = len(manifest)
-        model_details_ok = ~manifest["valid_model_details"].isin(
-            ["Not submitted", "Invalid link"]
-        )
-        valid_mask = manifest["valid_hf_username"] & model_details_ok
+        valid_mask = manifest["valid_hf_username"]
+        if REQUIRE_MODEL_REPORT:
+            manifest["valid_model_details"] = manifest.model_report_link.apply(
+                validate_model_details
+            )
+            valid_mask = valid_mask & ~manifest["valid_model_details"].isin(
+                ["Not submitted", "Invalid link"]
+            )
         manifest = manifest[valid_mask]
         logger.info(
             "Removed {} invalid submissions, {} remaining",
