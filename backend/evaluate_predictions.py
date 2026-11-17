@@ -8,19 +8,17 @@ import pandas as pd
 from loguru import logger
 
 from .config import (
-    ACTIVITY_METRICS,
     BISYRMSD_NAN_PENALTY,
     BOOTSTRAP_SAMPLES,
-    CLASSIFICATION_ENDPOINTS,
-    CLASSIFICATION_METRICS,
+    CLASSIFICATION_SPEC,
     ENDPOINTS_TO_LOG_TRANSFORM,
     MACRO_ENDPOINT_LABEL,
     METRIC_NAN_FALLBACK,
     POSEBUSTERS_MAX_FAILURES,
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
     REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX,
-    STRUCTURE_ENDPOINTS,
-    STRUCTURE_METRICS,
+    REGRESSION_SPEC,
+    STRUCTURE_SPEC,
 )
 from .ligand_bonds import ligands_from_pdb, ost_ligand
 from .utils import bootstrap_sampling, clip_and_log_transform
@@ -57,20 +55,20 @@ def count_ligand_residues(entity: object) -> int:
 
 
 # Sentinel returned when a per-compound structure score cannot be computed
-_NAN_STRUCTURE_METRICS: dict[str, float] = {m: np.nan for m in STRUCTURE_METRICS}
+_NAN_STRUCTURE_METRICS: dict[str, float] = {m: np.nan for m in STRUCTURE_SPEC.metrics}
 
 
 def _metrics_for_endpoint(endpoint: str) -> list[tuple[str, Callable]]:
     """Return the metric list to use for a given activity endpoint.
 
-    Classification endpoints are scored with ``CLASSIFICATION_METRICS``
+    Classification endpoints are scored with ``CLASSIFICATION_SPEC.metric_functions``
     (MCC/Accuracy/Precision/Recall/F1); every other activity endpoint (regression)
-    is scored with ``ACTIVITY_METRICS``.
+    is scored with ``REGRESSION_SPEC.metric_functions``.
     """
     return (
-        CLASSIFICATION_METRICS
-        if endpoint in CLASSIFICATION_ENDPOINTS
-        else ACTIVITY_METRICS
+        CLASSIFICATION_SPEC.metric_functions
+        if endpoint in CLASSIFICATION_SPEC.endpoints
+        else REGRESSION_SPEC.metric_functions
     )
 
 
@@ -82,7 +80,7 @@ def score_activity_predictions(
     Metrics are calculated for bootstrapped samples of the dataset to allow for testing
     the statistical significance of differences between submissions. Each endpoint is
     scored with the metric list appropriate to its type — regression endpoints get
-    ``ACTIVITY_METRICS``, classification endpoints get ``CLASSIFICATION_METRICS``
+    ``REGRESSION_SPEC.metric_functions``, classification endpoints get ``CLASSIFICATION_SPEC.metric_functions``
     — see ``_metrics_for_endpoint``.
 
     Each endpoint is scored only on the compounds that have a ground-truth value for
@@ -99,7 +97,7 @@ def score_activity_predictions(
     soft-thresholded RAE metric (``ST-RAE``). When present, these are threaded through
     to ``bootstrap_metrics`` alongside ``y_true``/``y_pred``; classification endpoints
     have no such columns, so ``None`` is passed instead (harmless, since none of
-    ``CLASSIFICATION_METRICS`` consume them).
+    ``CLASSIFICATION_SPEC.metric_functions`` consume them).
 
     This function does not compute the macro-averaged "MA" pseudo-endpoint. Callers
     that want a track's "MA" row should call ``add_macro_endpoint`` on this function's
@@ -112,8 +110,8 @@ def score_activity_predictions(
     ground_truth : pd.DataFrame
         The true activity values.
     endpoints : list[str]
-        The endpoints to score, e.g. ``REGRESSION_ENDPOINTS`` or
-        ``CLASSIFICATION_ENDPOINTS`` — regression and classification are
+        The endpoints to score, e.g. ``REGRESSION_SPEC.endpoints`` or
+        ``CLASSIFICATION_SPEC.endpoints`` — regression and classification are
         independent submission tracks, so a given call only ever scores one
         track's endpoints.
 
@@ -187,7 +185,7 @@ def score_activity_predictions(
                 "with a ground-truth value must have a prediction."
             )
 
-        if endpoint in CLASSIFICATION_ENDPOINTS:
+        if endpoint in CLASSIFICATION_SPEC.endpoints:
             # Safe only after NaN rows have already been dropped from both arrays.
             y_true = y_true.astype(bool)
             y_pred = y_pred.astype(bool)
@@ -237,13 +235,13 @@ def add_macro_endpoint(
         Output of ``score_activity_predictions`` (or any frame with "Sample",
         "Endpoint", and metric columns for multiple endpoints/tracks).
     endpoints : list[str]
-        The track's real endpoints to keep, e.g. ``REGRESSION_ENDPOINTS`` or
-        ``CLASSIFICATION_ENDPOINTS``. May be empty, in which case the result is
+        The track's real endpoints to keep, e.g. ``REGRESSION_SPEC.endpoints`` or
+        ``CLASSIFICATION_SPEC.endpoints``. May be empty, in which case the result is
         empty (callers should generally avoid calling this with an empty list
         rather than relying on that).
     metrics : list[tuple[str, Callable]]
-        The track's own metric list, e.g. ``ACTIVITY_METRICS`` or
-        ``CLASSIFICATION_METRICS`` — only these columns are kept.
+        The track's own metric list, e.g. ``REGRESSION_SPEC.metric_functions`` or
+        ``CLASSIFICATION_SPEC.metric_functions`` — only these columns are kept.
 
     Returns
     -------
@@ -304,7 +302,7 @@ def compute_macro_bootstrap_results(
         and one column per metric in ``metrics``.
     metrics : list[tuple[str, Callable]]
         The metric list to macro-average — only the names are used here (e.g.
-        ``ACTIVITY_METRICS`` or ``CLASSIFICATION_METRICS``).
+        ``REGRESSION_SPEC.metric_functions`` or ``CLASSIFICATION_SPEC.metric_functions``).
 
     Returns
     -------
@@ -408,7 +406,7 @@ def bootstrap_metrics(
     y_true: np.ndarray,
     endpoint: str,
     n_bootstrap_samples: int,
-    metrics: list[tuple[str, Callable]] = ACTIVITY_METRICS,
+    metrics: list[tuple[str, Callable]] = REGRESSION_SPEC.metric_functions,
     y_true_upper: np.ndarray | None = None,
     y_true_lower: np.ndarray | None = None,
 ) -> pd.DataFrame:
@@ -426,8 +424,8 @@ def bootstrap_metrics(
         The number of bootstrap samples to generate.
     metrics : list[tuple[str, Callable]]
         The ``(name, func)`` metric list to compute for every bootstrap sample —
-        ``ACTIVITY_METRICS`` for a regression endpoint, ``CLASSIFICATION_METRICS``
-        for a classification endpoint. Defaults to ``ACTIVITY_METRICS``.
+        ``REGRESSION_SPEC.metric_functions`` for a regression endpoint, ``CLASSIFICATION_SPEC.metric_functions``
+        for a classification endpoint. Defaults to ``REGRESSION_SPEC.metric_functions``.
     y_true_upper : np.ndarray | None
         Per-compound upper credible-interval bound for ``y_true``, aligned with
         ``y_true``/``y_pred``. Only consumed by metrics whose signature accepts
@@ -865,7 +863,7 @@ def score_compounds_raw(
         if failed_checks:
             pb_failures[mol_id] = failed_checks
 
-    raw_df = pd.DataFrame(rows, columns=["Molecule_Name", *STRUCTURE_METRICS])
+    raw_df = pd.DataFrame(rows, columns=["Molecule_Name", *STRUCTURE_SPEC.metrics])
     logger.info(
         "Successfully scored {}/{} structures.",
         int(raw_df["LDDT-PLI"].notna().sum()),
@@ -983,7 +981,7 @@ def bootstrap_structure_metrics(
         ``BiSyRMSD``, ``LDDT-LP``.
 
     """
-    _BOOTSTRAP_COLS = STRUCTURE_METRICS
+    _BOOTSTRAP_COLS = STRUCTURE_SPEC.metrics
     scores = per_compound_df[_BOOTSTRAP_COLS].to_numpy()
     n_compounds = scores.shape[0]
 
@@ -994,7 +992,7 @@ def bootstrap_structure_metrics(
         sample_means = np.mean(scores[idx], axis=0)
         row: dict[str, object] = {
             "Sample": sample_idx,
-            "Endpoint": STRUCTURE_ENDPOINTS[0],
+            "Endpoint": STRUCTURE_SPEC.endpoints[0],
         }
         for col, value in zip(_BOOTSTRAP_COLS, sample_means):
             row[col] = value

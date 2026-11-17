@@ -24,9 +24,11 @@ from botocore.exceptions import ClientError
 from backend import aws_submission_processing as asp
 from backend import evaluate_predictions
 from backend.config import (
-    ACTIVITY_PATHS,
     CLASSIFICATION_PATHS,
+    CLASSIFICATION_SPEC,
+    GROUND_TRUTH_PREFIX,
     REGRESSION_PATHS,
+    REGRESSION_SPEC,
     S3_BUCKET,
     STRUCTURE_DATASET_SIZE,
     STRUCTURE_PATHS,
@@ -181,7 +183,7 @@ def test_load_track_identifiers_success(monkeypatch):
     """load_track_identifiers returns whatever awswrangler reads back."""
     expected = pd.DataFrame({"Molecule_Name": ["a"], "phase": [1]})
     monkeypatch.setattr(asp.wr.s3, "read_parquet", lambda path: expected)
-    assert asp.load_track_identifiers(ACTIVITY_PATHS) is expected
+    assert asp.load_track_identifiers(REGRESSION_PATHS) is expected
 
 
 def test_load_track_identifiers_missing_raises_file_not_found(monkeypatch):
@@ -192,11 +194,11 @@ def test_load_track_identifiers_missing_raises_file_not_found(monkeypatch):
 
     monkeypatch.setattr(asp.wr.s3, "read_parquet", raise_not_found)
     with pytest.raises(FileNotFoundError, match="Activity identifiers not found"):
-        asp.load_track_identifiers(ACTIVITY_PATHS)
+        asp.load_track_identifiers(REGRESSION_PATHS)
 
 
 def test_load_track_identifiers_reads_activity_path(monkeypatch):
-    """load_track_identifiers(ACTIVITY_PATHS) reads from the activity ground-truth prefix."""
+    """load_track_identifiers(REGRESSION_PATHS) reads from the activity ground-truth prefix."""
     captured = {}
 
     def fake_read_parquet(path):
@@ -204,9 +206,9 @@ def test_load_track_identifiers_reads_activity_path(monkeypatch):
         return pd.DataFrame()
 
     monkeypatch.setattr(asp.wr.s3, "read_parquet", fake_read_parquet)
-    asp.load_track_identifiers(ACTIVITY_PATHS)
+    asp.load_track_identifiers(REGRESSION_PATHS)
     assert captured["path"] == (
-        f"s3://{S3_BUCKET}/{ACTIVITY_PATHS.ground_truth}/activity-identifiers.parquet"
+        f"s3://{S3_BUCKET}/{GROUND_TRUTH_PREFIX}/activity-identifiers.parquet"
     )
 
 
@@ -339,7 +341,7 @@ def test_score_regression_submission_phase_1_filters_by_isin(monkeypatch):
         pd.DataFrame(), phase=1, ground_truth=ground_truth, test_identifiers=identifiers
     )
     assert captured["ground_truth_names"] == {"m1", "m2"}
-    assert captured["endpoints"] == asp.REGRESSION_ENDPOINTS
+    assert captured["endpoints"] == REGRESSION_SPEC.endpoints
     assert isinstance(bootstrap_df, pd.DataFrame)
     assert isinstance(result_df, pd.DataFrame)
 
@@ -395,7 +397,7 @@ def test_score_classification_submission_requires_ground_truth():
 
 
 def test_score_classification_submission_routes_own_endpoints_and_metrics(monkeypatch):
-    """score_classification_submission scores only CLASSIFICATION_ENDPOINTS."""
+    """score_classification_submission scores only CLASSIFICATION_SPEC.endpoints."""
     captured = {}
 
     def fake_score_activity_predictions(submissions_df, ground_truth, endpoints):
@@ -408,7 +410,7 @@ def test_score_classification_submission_routes_own_endpoints_and_metrics(monkey
     bootstrap_df, result_df = asp.score_classification_submission(
         pd.DataFrame(), phase=0, ground_truth=ground_truth
     )
-    assert captured["endpoints"] == asp.CLASSIFICATION_ENDPOINTS
+    assert captured["endpoints"] == CLASSIFICATION_SPEC.endpoints
     assert isinstance(bootstrap_df, pd.DataFrame)
     assert isinstance(result_df, pd.DataFrame)
 

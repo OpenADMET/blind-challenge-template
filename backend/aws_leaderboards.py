@@ -239,7 +239,7 @@ def _narrow_averaged_results_to_endpoint(
     for any endpoint's leaderboard.
 
     The prefix match is case-insensitive. Structure scores used to be saved under a
-    hard-coded ``"Structure"`` label while ``STRUCTURE_ENDPOINTS`` is
+    hard-coded ``"Structure"`` label while ``STRUCTURE_SPEC.endpoints`` is
     ``["structure"]``, and files already scored that way are still in S3. Endpoint
     names must therefore not differ from each other only by case.
 
@@ -438,10 +438,7 @@ def _build_leaderboard(
 def create_track_leaderboards(
     track_paths: TrackPaths,
     stage: str,
-    primary_metric: str,
-    metric_sort_ascending: bool,
     significant_method: Literal["CLD", "tiers"] | None = "tiers",
-    additional_columns: list[str] | None = None,
 ) -> dict[str, pd.DataFrame | None]:
     """Build every leaderboard variant for a track: one per endpoint, plus a master.
 
@@ -457,6 +454,9 @@ def create_track_leaderboards(
     applied to the master leaderboard (or the track's one leaderboard, for a
     single-endpoint track) — never to the individual per-endpoint leaderboards of a
     multi-endpoint track — and only for "interim"/"final" stages, never "live".
+
+    Ranking (primary metric and direction) and extra columns come from the track's
+    ``TrackSpec``.
 
     Parameters
     ----------
@@ -477,19 +477,12 @@ def create_track_leaderboards(
           submissions before ``FINAL_LEADERBOARD_DEADLINE``. Includes
           significance testing on the master leaderboard and filters out invalid
           submissions.
-    primary_metric : str
-        The primary metric to rank by (a bare metric name).
-    metric_sort_ascending : bool
-        Whether lower values of the primary metric are better.
     significant_method : Literal["CLD", "tiers"] | None
         Pairwise significance method ("CLD", "tiers") applied to the master
         leaderboard when ``stage`` is "interim" or "final". Ignored (no
         significance testing) when ``stage`` is "live". Defaults to "tiers".
         Multiple-testing correction is Benjamini-Hochberg (see
         ``FinalLeaderboard._perform_pairwise_comparisons``).
-    additional_columns : list[str] | None
-        Extra bare columns to copy onto every leaderboard variant. Defaults to
-        none.
 
     Returns
     -------
@@ -502,7 +495,7 @@ def create_track_leaderboards(
 
     """
     if not track_paths.endpoints:
-        # A track can legitimately have zero endpoints (e.g. CLASSIFICATION_ENDPOINTS
+        # A track can legitimately have zero endpoints (e.g. CLASSIFICATION_SPEC.endpoints
         # before that track launches, or if it's ever pulled) — without this guard,
         # track_paths.endpoints[0] below would raise IndexError.
         logger.info(
@@ -511,6 +504,7 @@ def create_track_leaderboards(
         )
         return {}
 
+    spec = track_paths.spec
     comparisons = significant_method if stage != "live" else None
     remove_invalid = stage == "final"
     logger.info(
@@ -550,11 +544,11 @@ def create_track_leaderboards(
                 manifest=manifest,
                 averaged_scores=averaged_scores,
                 bootstrap_scores=bootstrap_scores,
-                primary_metric=primary_metric,
-                metric_sort_ascending=metric_sort_ascending,
+                primary_metric=spec.primary_metric,
+                metric_sort_ascending=not spec.higher_is_better,
                 comparisons=comparisons if slug == master_slug else None,
                 endpoint=slug,
-                additional_columns=additional_columns or [],
+                additional_columns=list(spec.extra_columns),
             )
         except Exception:
             logger.exception(

@@ -132,18 +132,18 @@ The phase 0 (all compounds) coverage column is used to classify the whole submis
   (fraction of compounds successfully matched), not a distributional quantity per
   bootstrap sample, so it's computed once and appended directly to `averaged_df`
   (`coverage_mean`) rather than flowing through the bootstrap table.
-- **`Endpoint` is `STRUCTURE_ENDPOINTS[0]` (`"structure"`)** for every bootstrap row,
+- **`Endpoint` is `STRUCTURE_SPEC.endpoints[0]` (`"structure"`)** for every bootstrap row,
   which lets `average_bootstrap_results_by_endpoint`/`pivot_endpoint_results_wide`
   (built for activity's per-endpoint schema) work unchanged for structure's single
   endpoint. There is no macro-average pseudo-endpoint for structure (see
   [scoring-and-leaderboards.md](scoring-and-leaderboards.md) — a single-endpoint track
-  never gets one), and `STRUCTURE_ENDPOINTS[0]` is also the leaderboard's one and only
+  never gets one), and `STRUCTURE_SPEC.endpoints[0]` is also the leaderboard's one and only
   endpoint slug. Before v0.1.1 the label was a hard-coded `"Structure"`, which didn't
   match the config and broke every structure leaderboard build. Leaderboard building
   matches endpoints case-insensitively, so score files saved with the old label still
   work.
-- **Ranked by `LDDT-PLI` descending** (`SORT_STRUCTURE_LEADERBOARD_BY = "LDDT-PLI"`,
-  `metric_sort_ascending=False`) — higher is better, like classification's `MCC` but
+- **Ranked by `LDDT-PLI` descending** (`STRUCTURE_SPEC`: `primary_metric="LDDT-PLI"`,
+  `higher_is_better=True`) — higher is better, like classification's `MCC` but
   unlike regression's `ST-RAE` (lower is better, ascending).
 - **PoseBusters filters geometrically or physically invalid poses after OST scoring.**
   After the best OST result is selected, the predicted complex PDB (`model_path`) is

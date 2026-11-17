@@ -8,10 +8,10 @@ scoring call — each mirroring how the structure track is already independent.
 
 <!-- TODO: the endpoint counts below (4 regression, 2 classification) and the
      example endpoint names (ENDPOINT_1 …) assume the template's default config.
-     Update them to match this challenge's REGRESSION_ENDPOINTS /
-     CLASSIFICATION_ENDPOINTS in backend/config.py. -->
+     Update them to match this challenge's REGRESSION_SPEC.endpoints /
+     CLASSIFICATION_SPEC.endpoints in backend/config.py. -->
  They still score against the same shared ground-truth
-dataset (the same compound set, just different columns) via `ACTIVITY_PATHS`.
+dataset (the same compound set, just different columns): both `TrackSpec`s have `dataset="activity"`.
 The structure track itself scores a single endpoint (`LDDT-PLI`/`BiSyRMSD`/`LDDT-LP`)
 and skips the macro-averaging step entirely (stage 2 below), so it goes straight from
 stage 1 into stage 3's pivot (still narrowed to its one endpoint, "structure") with no
@@ -30,7 +30,7 @@ flowchart TD
         RPRED --> RMERGE["Merge on Molecule_Name"]
         GT --> RMERGE
         RMERGE --> RLOOP["For each of the 4 regression endpoints<br/>(compounds with no ground truth for that<br/>endpoint are excluded before scoring)"]
-        RLOOP --> RMETRICS["ACTIVITY_METRICS:<br/>ST-RAE · MAE · R2 · Spearman_R · Kendall_Tau<br/>(ST-RAE also receives that endpoint's<br/>_conf_high/_conf_low credible-interval bounds)"]
+        RLOOP --> RMETRICS["REGRESSION_SPEC.metrics:<br/>ST-RAE · MAE · R2 · Spearman_R · Kendall_Tau<br/>(ST-RAE also receives that endpoint's<br/>_conf_high/_conf_low credible-interval bounds)"]
         RMETRICS --> RBOOT["Bootstrap resample, 1000 iterations<br/>(same sample indices shared across all endpoints<br/>of a given pool size)"]
         RBOOT --> RRAW[("Raw bootstrap table<br/>4 endpoints x 1000 samples")]
     end
@@ -40,7 +40,7 @@ flowchart TD
         GT --> CMERGE["Merge on Molecule_Name"]
         CPRED --> CMERGE
         CMERGE --> CLOOP["For each of the 2 classification endpoints<br/>(compounds with no ground truth for that<br/>endpoint are excluded before scoring)"]
-        CLOOP --> CMETRICS["CLASSIFICATION_METRICS:<br/>MCC · Accuracy · Precision · Recall · F1"]
+        CLOOP --> CMETRICS["CLASSIFICATION_SPEC.metrics:<br/>MCC · Accuracy · Precision · Recall · F1"]
         CMETRICS --> CBOOT["Bootstrap resample, 1000 iterations"]
         CBOOT --> CRAW[("Raw bootstrap table<br/>2 endpoints x 1000 samples")]
     end
@@ -91,7 +91,7 @@ flowchart TD
   (`lambda_handler_regression.py`/`lambda_handler_classification.py`), and own
   validation schema (`submission_validation.get_regression_schema`/
   `get_classification_schema`) — mirroring the already-independent structure track.
-  Both still score against the same shared ground truth (`ACTIVITY_PATHS`,
+  Both still score against the same shared ground truth (the `activity` dataset,
   `activity-dataset.parquet`/`activity-identifiers.parquet`) since they cover the same
   underlying compound set, just different columns. One valid submission produces
   exactly one manifest row, under its own track.
@@ -99,8 +99,8 @@ flowchart TD
   endpoint.** `score_activity_predictions(predictions, ground_truth, endpoints)` is
   called once per track with that track's own `endpoints` list (so bootstrap sample
   indices are shared across endpoints wherever pool sizes match — see below), and
-  picks `ACTIVITY_METRICS` (ST-RAE/MAE/R2/Spearman_R/Kendall_Tau) for a regression
-  endpoint or `CLASSIFICATION_METRICS` (MCC/Accuracy/Precision/Recall/F1) for a
+  picks `REGRESSION_SPEC.metrics` (ST-RAE/MAE/R2/Spearman_R/Kendall_Tau) for a regression
+  endpoint or `CLASSIFICATION_SPEC.metrics` (MCC/Accuracy/Precision/Recall/F1) for a
   classification endpoint via `_metrics_for_endpoint`.
 - **`ST-RAE` (soft-thresholded RAE) needs each regression endpoint's credible-interval
   bounds.** Ground truth carries `f"{endpoint}{REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX}"`/
@@ -112,7 +112,7 @@ flowchart TD
   A prediction inside `[y_true_lower, y_true_upper]` scores zero error for that
   compound; outside the band, error is the distance to the nearest bound rather than
   to the raw point estimate. Classification endpoints have no such columns — `None` is
-  passed through, which is harmless since no `CLASSIFICATION_METRICS` function needs
+  passed through, which is harmless since no `CLASSIFICATION_SPEC.metrics` function needs
   them.
 - **`add_macro_endpoint` appends the macro step.** It appends that track's own "MA"
   pseudo-endpoint via `compute_macro_bootstrap_results` when the track has more than
@@ -184,7 +184,7 @@ flowchart TD
   plus an additional `MA` master when there's more than one endpoint (a
   single-endpoint track like structure just gets that one leaderboard, which also
   doubles as the "master" for significance-testing purposes). A track with *zero*
-  endpoints (`CLASSIFICATION_ENDPOINTS = []`, e.g. before that track launches, or if
+  endpoints (`CLASSIFICATION_SPEC.endpoints = []`, e.g. before that track launches, or if
   it's ever pulled) returns `{}` immediately rather than attempting to build anything
   — `lambda_handler_leaderboard.py`'s `_TRACKS` dict also skips registering a
   zero-endpoint track in the first place, so this is belt-and-suspenders.

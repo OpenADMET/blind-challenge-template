@@ -14,13 +14,9 @@ from botocore.exceptions import ClientError
 from loguru import logger
 
 from .config import (
-    ACTIVITY_METRICS,
-    ACTIVITY_PATHS,
     BOOTSTRAP_SAMPLES,
-    CLASSIFICATION_ENDPOINTS,
-    CLASSIFICATION_METRICS,
     CLASSIFICATION_PATHS,
-    REGRESSION_ENDPOINTS,
+    GROUND_TRUTH_PREFIX,
     REGRESSION_PATHS,
     S3_BUCKET,
     STRUCTURE_DATASET_SIZE,
@@ -184,8 +180,8 @@ def load_track_identifiers(paths: TrackPaths) -> pd.DataFrame:
     Parameters
     ----------
     paths : TrackPaths
-        Track path helper (``ACTIVITY_PATHS`` or ``STRUCTURE_PATHS``) selecting
-        where to load from.
+        Any track scoring the dataset to load: regression and classification both
+        read ``activity-identifiers.parquet``.
 
     Returns
     -------
@@ -199,12 +195,12 @@ def load_track_identifiers(paths: TrackPaths) -> pd.DataFrame:
         If the identifiers file is not present in S3.
 
     """
-    path = f"s3://{S3_BUCKET}/{paths.ground_truth}/{paths.track}-identifiers.parquet"
+    path = f"s3://{S3_BUCKET}/{paths.identifiers_file}"
     try:
         return wr.s3.read_parquet(path)
     except wr.exceptions.NoFilesFound:
         raise FileNotFoundError(
-            f"{paths.track.capitalize()} identifiers not found in S3: {path}"
+            f"{paths.spec.dataset.capitalize()} identifiers not found in S3: {path}"
         ) from None
 
 
@@ -281,7 +277,7 @@ def load_activity_ground_truth() -> pd.DataFrame:
         If the ground truth file is not present in S3.
 
     """
-    path = f"s3://{S3_BUCKET}/{ACTIVITY_PATHS.ground_truth}/activity-dataset.parquet"
+    path = f"s3://{S3_BUCKET}/{GROUND_TRUTH_PREFIX}/activity-dataset.parquet"
     try:
         return wr.s3.read_parquet(path)
     except wr.exceptions.NoFilesFound:
@@ -293,8 +289,7 @@ def load_activity_ground_truth() -> pd.DataFrame:
 def _score_tabular_submission(
     submissions_df: pd.DataFrame,
     phase: int,
-    endpoints: list[str],
-    metrics: list,
+    track_paths: TrackPaths,
     ground_truth: pd.DataFrame | None,
     test_identifiers: pd.DataFrame | None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -307,11 +302,9 @@ def _score_tabular_submission(
     phase : int
         The phase number to determine which test data to use for scoring.
         0 = all compounds; 1 = interim subset only.
-    endpoints : list[str]
-        This track's endpoints — ``REGRESSION_ENDPOINTS`` or
-        ``CLASSIFICATION_ENDPOINTS``.
-    metrics : list
-        This track's metrics — ``ACTIVITY_METRICS`` or ``CLASSIFICATION_METRICS``.
+    track_paths : TrackPaths
+        ``REGRESSION_PATHS`` or ``CLASSIFICATION_PATHS``; its spec gives the
+        endpoints and metrics scored.
     ground_truth : pd.DataFrame | None
         The full activity ground truth. Required — must be provided by the caller
         (see ``load_activity_ground_truth``).
@@ -338,17 +331,18 @@ def _score_tabular_submission(
         raise ValueError("ground_truth is required")
     if phase != 0:
         if test_identifiers is None:
-            test_identifiers = load_track_identifiers(ACTIVITY_PATHS)
+            test_identifiers = load_track_identifiers(track_paths)
         phase_ids = set(
             test_identifiers.loc[test_identifiers["phase"] == phase, "Molecule_Name"]
         )
         ground_truth = ground_truth[ground_truth["Molecule_Name"].isin(phase_ids)]
 
+    spec = track_paths.spec
     bootstrap_results = score_activity_predictions(
-        submissions_df, ground_truth, endpoints=endpoints
+        submissions_df, ground_truth, endpoints=spec.endpoints
     )
     track_bootstrap_results = add_macro_endpoint(
-        bootstrap_results, endpoints=endpoints, metrics=metrics
+        bootstrap_results, endpoints=spec.endpoints, metrics=spec.metric_functions
     )
     by_endpoint_results = average_bootstrap_results_by_endpoint(track_bootstrap_results)
     result_df = pivot_endpoint_results_wide(by_endpoint_results)
@@ -365,8 +359,7 @@ def score_regression_submission(
     return _score_tabular_submission(
         submissions_df,
         phase,
-        REGRESSION_ENDPOINTS,
-        ACTIVITY_METRICS,
+        REGRESSION_PATHS,
         ground_truth,
         test_identifiers,
     )
@@ -382,8 +375,7 @@ def score_classification_submission(
     return _score_tabular_submission(
         submissions_df,
         phase,
-        CLASSIFICATION_ENDPOINTS,
-        CLASSIFICATION_METRICS,
+        CLASSIFICATION_PATHS,
         ground_truth,
         test_identifiers,
     )
@@ -430,7 +422,7 @@ def _process_new_tabular_submission(
     submission_metadata = fetch_submission_metadata(sk)
 
     try:
-        identifiers_df = load_track_identifiers(ACTIVITY_PATHS)
+        identifiers_df = load_track_identifiers(track_paths)
         identifiers = set(identifiers_df["Molecule_Name"])
     except FileNotFoundError:
         logger.warning(

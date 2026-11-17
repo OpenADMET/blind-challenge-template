@@ -10,8 +10,8 @@ import pandas as pd
 from loguru import logger
 
 from .config import (
-    ACTIVITY_PATHS,
     CLASSIFICATION_PATHS,
+    ENTRIES_PREFIX,
     REGRESSION_PATHS,
     S3_BUCKET,
     STRUCTURE_PATHS,
@@ -149,7 +149,7 @@ def save_all_entries_list(entries_df: pd.DataFrame) -> str:
     """
     # ``all_entries`` is the same for every track — this list spans both tracks, so
     # which TrackPaths instance it's read from doesn't matter.
-    namespace = f"s3://{S3_BUCKET}/{ACTIVITY_PATHS.all_entries}"
+    namespace = f"s3://{S3_BUCKET}/{ENTRIES_PREFIX}"
     wr.s3.to_csv(
         df=entries_df,
         path=f"{namespace}/all_entries_{datetime.now().isoformat()}.csv",

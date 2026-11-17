@@ -34,15 +34,13 @@ import pandas as pd
 # installing the package (pytest itself gets this via pytest.ini's pythonpath).
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from backend.config import (  # noqa: E402
+from backend.config import (
     ACTIVITY_DATASET_SIZE,
-    ACTIVITY_METRICS,
     BOOTSTRAP_SAMPLES,
-    CLASSIFICATION_ENDPOINTS,
-    CLASSIFICATION_METRICS,
+    CLASSIFICATION_SPEC,
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
     REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX,
-    REGRESSION_ENDPOINTS,
+    REGRESSION_SPEC,
 )
 from backend.evaluate_predictions import (  # noqa: E402
     compute_macro_bootstrap_results,
@@ -104,7 +102,7 @@ def build_activity_ground_truth(rng: np.random.Generator) -> pd.DataFrame:
     n = ACTIVITY_DATASET_SIZE
     df = pd.DataFrame({"SMILES": _smiles(n), "Molecule_Name": _molecule_names(n)})
 
-    for endpoint in REGRESSION_ENDPOINTS:
+    for endpoint in REGRESSION_SPEC.endpoints:
         values = rng.uniform(2.0, 9.0, size=n)
         half_width = rng.uniform(0.1, 0.6, size=n)
         df[endpoint] = values
@@ -115,21 +113,21 @@ def build_activity_ground_truth(rng: np.random.Generator) -> pd.DataFrame:
             values + half_width
         )
 
-    for endpoint in CLASSIFICATION_ENDPOINTS:
+    for endpoint in CLASSIFICATION_SPEC.endpoints:
         df[endpoint] = rng.random(n) < 0.45
 
     # A handful of real gaps: regression endpoints (except the 2nd) and the first
     # classification endpoint each miss a few compounds. The suite needs at least
     # one missing classification label and tolerates missing regression labels.
     gap_endpoints = [
-        e for i, e in enumerate(REGRESSION_ENDPOINTS) if i != 1
-    ] + CLASSIFICATION_ENDPOINTS[:1]
+        e for i, e in enumerate(REGRESSION_SPEC.endpoints) if i != 1
+    ] + CLASSIFICATION_SPEC.endpoints[:1]
     for offset, endpoint in enumerate(gap_endpoints):
         gap_rows = [5 + offset, 25 + offset, 60 + offset]
-        if endpoint in CLASSIFICATION_ENDPOINTS:
+        if endpoint in CLASSIFICATION_SPEC.endpoints:
             df[endpoint] = df[endpoint].astype(object)
         df.loc[gap_rows, endpoint] = np.nan
-        if endpoint in REGRESSION_ENDPOINTS:
+        if endpoint in REGRESSION_SPEC.endpoints:
             df.loc[
                 gap_rows, f"{endpoint}{REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX}"
             ] = np.nan
@@ -149,12 +147,12 @@ def build_activity_submission(
     n = len(ground_truth)
     df = ground_truth[["SMILES", "Molecule_Name"]].copy()
 
-    for endpoint in REGRESSION_ENDPOINTS:
+    for endpoint in REGRESSION_SPEC.endpoints:
         true = ground_truth[endpoint].to_numpy(dtype=float)
         filled = np.where(np.isnan(true), 5.5, true)
         df[endpoint] = filled + rng.normal(0.0, noise, size=n)
 
-    for endpoint in CLASSIFICATION_ENDPOINTS:
+    for endpoint in CLASSIFICATION_SPEC.endpoints:
         true = ground_truth[endpoint].to_numpy()
         as_bool = np.array([bool(v) if not pd.isna(v) else False for v in true])
         flip = rng.random(n) < 0.15
@@ -231,8 +229,8 @@ def main() -> None:
     )
 
     regression_scores = build_bootstrap_scores(
-        REGRESSION_ENDPOINTS,
-        ACTIVITY_METRICS,
+        REGRESSION_SPEC.endpoints,
+        REGRESSION_SPEC.metric_functions,
         {
             "ST-RAE": (0.05, 0.25),
             "MAE": (0.20, 0.35),
@@ -248,8 +246,8 @@ def main() -> None:
     )
 
     classification_scores = build_bootstrap_scores(
-        CLASSIFICATION_ENDPOINTS,
-        CLASSIFICATION_METRICS,
+        CLASSIFICATION_SPEC.endpoints,
+        CLASSIFICATION_SPEC.metric_functions,
         {
             "MCC": (-0.10, 0.15),
             "Accuracy": (0.43, 0.57),
