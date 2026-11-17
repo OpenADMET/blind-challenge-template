@@ -1,7 +1,8 @@
 name: Backend Tests
 
-# Lints, type-checks, and runs the backend unit suite (pytest tests/backend/) on
-# this repo and on any challenge repo forked from it. This and hf-space-checks.yml
+# Lints, type-checks, and runs the backend and scripts unit suites (pytest
+# tests/backend/ tests/scripts/) on this repo and on any challenge repo forked
+# from it. This and hf-space-checks.yml
 # are the two workflows active out of the box. deploy.yml / deploy-hf-space.yml /
 # naming-guardrail.yml ship under .github/workflows.disabled/ and are enabled per
 # docs/SETUP.md.
@@ -46,10 +47,9 @@ jobs:
         # one with a default), which makes mypy abort with a syntax error before it
         # can check anything. This is a long-standing, unresolved upstream issue
         # that recurs in different files across releases (see rdkit/rdkit#8339,
-        # #7554, #8673, #7378). openstructure's version is intentionally unpinned
-        # above, so the exact rdkit version — and whether its stubs are currently
-        # broken, or whether this build of openstructure even pulls in rdkit at
-        # all — can vary between runs. Every rdkit import in backend/ already
+        # #7554, #8673, #7378). rdkit is pinned in environment.yml (installed via
+        # pip), but whether a given release's stubs are broken varies, so the
+        # step stays. Every rdkit import in backend/ already
         # carries a `# type: ignore[import]`, which mypy honors whether rdkit is
         # merely untyped or entirely absent, so skip this step gracefully instead
         # of failing when there's no rdkit-stubs (or no rdkit) to clean up.
@@ -63,16 +63,16 @@ jobs:
           "
 
       - name: Lint (ruff)
-        run: ruff check backend/
+        run: ruff check backend/ scripts/
 
       - name: Type check (mypy)
-        run: mypy backend/
+        run: mypy backend/ scripts/
 
       - name: Docstring check (pydoclint)
-        run: pydoclint backend/
+        run: pydoclint backend/ scripts/
 
       - name: Run backend tests
-        run: pytest tests/backend/ -v --cov=backend --cov-report=term-missing
+        run: pytest tests/backend/ tests/scripts/ -v --cov=backend --cov=scripts --cov-report=term-missing
 
       - name: Upload coverage report
         if: always()

@@ -8,20 +8,19 @@ import pandas as pd
 from loguru import logger
 
 from .config import (
-    ACTIVITY_METRICS,
     BISYRMSD_NAN_PENALTY,
     BOOTSTRAP_SAMPLES,
-    CLASSIFICATION_ENDPOINTS,
-    CLASSIFICATION_METRICS,
+    CLASSIFICATION_SPEC,
     ENDPOINTS_TO_LOG_TRANSFORM,
     MACRO_ENDPOINT_LABEL,
     METRIC_NAN_FALLBACK,
     POSEBUSTERS_MAX_FAILURES,
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
     REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX,
-    STRUCTURE_ENDPOINTS,
-    STRUCTURE_METRICS,
+    REGRESSION_SPEC,
+    STRUCTURE_SPEC,
 )
+from .ligand_bonds import ligands_from_pdb, ost_ligand
 from .utils import bootstrap_sampling, clip_and_log_transform
 
 # Residue names treated as solvent — excluded from ligand detection
@@ -56,53 +55,33 @@ def count_ligand_residues(entity: object) -> int:
 
 
 # Sentinel returned when a per-compound structure score cannot be computed
-_NAN_STRUCTURE_METRICS: dict[str, float] = {m: np.nan for m in STRUCTURE_METRICS}
+_NAN_STRUCTURE_METRICS: dict[str, float] = {m: np.nan for m in STRUCTURE_SPEC.metrics}
 
 
 def _metrics_for_endpoint(endpoint: str) -> list[tuple[str, Callable]]:
     """Return the metric list to use for a given activity endpoint.
 
-    Classification endpoints are scored with ``CLASSIFICATION_METRICS``
+    Classification endpoints are scored with ``CLASSIFICATION_SPEC.metric_functions``
     (MCC/Accuracy/Precision/Recall/F1); every other activity endpoint (regression)
-    is scored with ``ACTIVITY_METRICS``.
+    is scored with ``REGRESSION_SPEC.metric_functions``.
     """
     return (
-        CLASSIFICATION_METRICS
-        if endpoint in CLASSIFICATION_ENDPOINTS
-        else ACTIVITY_METRICS
+        CLASSIFICATION_SPEC.metric_functions
+        if endpoint in CLASSIFICATION_SPEC.endpoints
+        else REGRESSION_SPEC.metric_functions
     )
 
 
 def score_activity_predictions(
     predictions: pd.DataFrame, ground_truth: pd.DataFrame, endpoints: list[str]
 ) -> pd.DataFrame:
-    """Score the activity predictions against the ground truth.
+    """Score activity predictions on bootstrap samples of the compounds.
 
-    Metrics are calculated for bootstrapped samples of the dataset to allow for testing
-    the statistical significance of differences between submissions. Each endpoint is
-    scored with the metric list appropriate to its type — regression endpoints get
-    ``ACTIVITY_METRICS``, classification endpoints get ``CLASSIFICATION_METRICS``
-    — see ``_metrics_for_endpoint``.
-
-    Each endpoint is scored only on the compounds that have a ground-truth value for
-    that endpoint — a compound not tested for a given endpoint has ``y_true == NaN``
-    there and is excluded from that endpoint's bootstrap sampling entirely. Every
-    compound with a ground-truth value is expected to have a prediction (participants
-    are asked to predict every compound, and submission_validation.py is the primary
-    check for missing predictions); a NaN prediction for such a compound is treated as
-    a validation failure here too.
-
-    Regression endpoints carry credible-interval bound columns in ``ground_truth``
-    (named ``f"{endpoint}{REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX}"`` /
-    ``f"{endpoint}{REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX}"``), used by the
-    soft-thresholded RAE metric (``ST-RAE``). When present, these are threaded through
-    to ``bootstrap_metrics`` alongside ``y_true``/``y_pred``; classification endpoints
-    have no such columns, so ``None`` is passed instead (harmless, since none of
-    ``CLASSIFICATION_METRICS`` consume them).
-
-    This function does not compute the macro-averaged "MA" pseudo-endpoint. Callers
-    that want a track's "MA" row should call ``add_macro_endpoint`` on this function's
-    output with the same ``endpoints`` (and that track's own metrics).
+    Each endpoint uses its own track's metrics (``_metrics_for_endpoint``) and only
+    the compounds with a ground-truth value for it. A missing prediction for such a
+    compound is an error. Regression endpoints pass their credible-interval columns
+    to the metrics that need them (``ST-RAE``). The macro "MA" pseudo-endpoint is added
+    separately, by ``add_macro_endpoint``.
 
     Parameters
     ----------
@@ -111,8 +90,8 @@ def score_activity_predictions(
     ground_truth : pd.DataFrame
         The true activity values.
     endpoints : list[str]
-        The endpoints to score, e.g. ``REGRESSION_ENDPOINTS`` or
-        ``CLASSIFICATION_ENDPOINTS`` — regression and classification are
+        The endpoints to score, e.g. ``REGRESSION_SPEC.endpoints`` or
+        ``CLASSIFICATION_SPEC.endpoints`` — regression and classification are
         independent submission tracks, so a given call only ever scores one
         track's endpoints.
 
@@ -186,7 +165,7 @@ def score_activity_predictions(
                 "with a ground-truth value must have a prediction."
             )
 
-        if endpoint in CLASSIFICATION_ENDPOINTS:
+        if endpoint in CLASSIFICATION_SPEC.endpoints:
             # Safe only after NaN rows have already been dropped from both arrays.
             y_true = y_true.astype(bool)
             y_pred = y_pred.astype(bool)
@@ -217,18 +196,12 @@ def add_macro_endpoint(
     endpoints: list[str],
     metrics: list[tuple[str, Callable]],
 ) -> pd.DataFrame:
-    """Narrow to one track's endpoints/metrics and append its macro "MA" row.
+    """Narrow to one track's endpoints and metrics, and append its macro "MA" rows.
 
-    ``score_activity_predictions`` scores every activity endpoint (regression and
-    classification) in one call, concatenating per-endpoint frames that have
-    *different* metric columns (regression rows have MAE/ST-RAE/..., classification rows
-    have MCC/Accuracy/...) — the concatenated result has both sets of columns, NaN
-    wherever a metric doesn't apply to that row's endpoint. This filters rows down to
-    just ``endpoints`` (one track's real endpoints) and columns down to just
-    ``metrics`` (that track's own metrics), so no cross-track NaN columns leak into
-    the result, then appends a macro-averaged "MA" row set (via
-    ``compute_macro_bootstrap_results``) when there's more than one endpoint to
-    average across.
+    ``score_activity_predictions`` can return several tracks' endpoints at once, each
+    with its own metric columns. This keeps just ``endpoints`` and ``metrics``, then
+    adds the macro average (``compute_macro_bootstrap_results``) when there's more than
+    one endpoint.
 
     Parameters
     ----------
@@ -236,13 +209,13 @@ def add_macro_endpoint(
         Output of ``score_activity_predictions`` (or any frame with "Sample",
         "Endpoint", and metric columns for multiple endpoints/tracks).
     endpoints : list[str]
-        The track's real endpoints to keep, e.g. ``REGRESSION_ENDPOINTS`` or
-        ``CLASSIFICATION_ENDPOINTS``. May be empty, in which case the result is
+        The track's real endpoints to keep, e.g. ``REGRESSION_SPEC.endpoints`` or
+        ``CLASSIFICATION_SPEC.endpoints``. May be empty, in which case the result is
         empty (callers should generally avoid calling this with an empty list
         rather than relying on that).
     metrics : list[tuple[str, Callable]]
-        The track's own metric list, e.g. ``ACTIVITY_METRICS`` or
-        ``CLASSIFICATION_METRICS`` — only these columns are kept.
+        The track's own metric list, e.g. ``REGRESSION_SPEC.metric_functions`` or
+        ``CLASSIFICATION_SPEC.metric_functions`` — only these columns are kept.
 
     Returns
     -------
@@ -278,21 +251,9 @@ def compute_macro_bootstrap_results(
     For every bootstrap sample, every metric in ``metrics`` is macro-averaged across
     endpoints with a plain arithmetic mean.
 
-    Spearman_R was previously averaged via a Fisher z-transform (``arctanh`` /
-    ``tanh``), the standard variance-stabilising treatment for combining several
-    noisy *estimates of the same underlying correlation* (e.g. meta-analysis, or
-    averaging one endpoint's Spearman across repeated resamples of the same data).
-    That doesn't apply here: this average combines Spearman scores from *different*
-    endpoints, which are unrelated true correlations, not repeated estimates of one. Fisher's z blows up near +/-1 (``arctanh(1) = inf``,
-    clipped in practice but still huge — e.g. ``arctanh(1 - 1e-7) ≈ 8.4`` vs.
-    ``arctanh(0) = 0``), so a submission with a near-perfect Spearman on a couple of
-    endpoints and ~0 on the rest could macro-average to ~0.99 instead of the
-    naively-expected ~0.5, letting a handful of easy/lucky endpoints dominate the
-    macro score. A plain mean — already used for ST-RAE/MAE/R2/Kendall_Tau — doesn't have
-    this failure mode, so Spearman_R now uses one too, for the same reason
-    Kendall_Tau always has: Fisher's z-transform has no standard extension to
-    Kendall's tau (different asymptotic sampling distribution), so there was never a
-    transform-based option for it here.
+    That includes the correlations: a Fisher z-transform suits repeated estimates of
+    one correlation, not different endpoints, and near +/-1 it lets one or two
+    near-perfect endpoints dominate (see docs/scoring-and-leaderboards.md).
 
     Parameters
     ----------
@@ -303,7 +264,7 @@ def compute_macro_bootstrap_results(
         and one column per metric in ``metrics``.
     metrics : list[tuple[str, Callable]]
         The metric list to macro-average — only the names are used here (e.g.
-        ``ACTIVITY_METRICS`` or ``CLASSIFICATION_METRICS``).
+        ``REGRESSION_SPEC.metric_functions`` or ``CLASSIFICATION_SPEC.metric_functions``).
 
     Returns
     -------
@@ -327,22 +288,12 @@ def compute_macro_bootstrap_results(
 
 
 def pivot_endpoint_results_wide(by_endpoint_results: pd.DataFrame) -> pd.DataFrame:
-    """Pivot per-endpoint mean/std results into a single wide row.
+    """Pivot per-endpoint mean/std results into one wide row.
 
-    ``by_endpoint_results`` (as returned by ``average_bootstrap_results_by_endpoint``)
-    has one row per endpoint (indexed by endpoint name, including the synthetic
-    ``MACRO_ENDPOINT_LABEL`` ("MA") pseudo-endpoint computed by
-    ``compute_macro_bootstrap_results``) and one column per ``<metric>_mean`` /
-    ``<metric>_std``. This flattens it into a single-row DataFrame suitable for saving
-    as a submission's ``averaged-results.parquet``, with every endpoint's columns
-    consistently prefixed as ``f"{endpoint}_{metric}_{mean|std}"`` (e.g.
-    ``"ENDPOINT_1_MAE_mean"``, ``"MA_ST-RAE_mean"``).
-
-    A leaderboard for any single endpoint (macro or real) is then built by narrowing
-    back down to that endpoint's columns and stripping the prefix — see
-    ``aws_leaderboards._narrow_averaged_results_to_endpoint`` — so ``primary_metric``
-    is always a bare metric name (e.g. ``"ST-RAE"``) regardless of which endpoint a
-    given leaderboard targets.
+    The row (saved as ``averaged-results.parquet``) has every endpoint's columns,
+    prefixed ``f"{endpoint}_{metric}_{mean|std}"`` (e.g. ``"MA_ST-RAE_mean"``).
+    Leaderboards narrow it back to one endpoint's bare columns
+    (``aws_leaderboards._narrow_averaged_results_to_endpoint``).
 
     Parameters
     ----------
@@ -407,7 +358,7 @@ def bootstrap_metrics(
     y_true: np.ndarray,
     endpoint: str,
     n_bootstrap_samples: int,
-    metrics: list[tuple[str, Callable]] = ACTIVITY_METRICS,
+    metrics: list[tuple[str, Callable]] = REGRESSION_SPEC.metric_functions,
     y_true_upper: np.ndarray | None = None,
     y_true_lower: np.ndarray | None = None,
 ) -> pd.DataFrame:
@@ -425,8 +376,8 @@ def bootstrap_metrics(
         The number of bootstrap samples to generate.
     metrics : list[tuple[str, Callable]]
         The ``(name, func)`` metric list to compute for every bootstrap sample —
-        ``ACTIVITY_METRICS`` for a regression endpoint, ``CLASSIFICATION_METRICS``
-        for a classification endpoint. Defaults to ``ACTIVITY_METRICS``.
+        ``REGRESSION_SPEC.metric_functions`` for a regression endpoint, ``CLASSIFICATION_SPEC.metric_functions``
+        for a classification endpoint. Defaults to ``REGRESSION_SPEC.metric_functions``.
     y_true_upper : np.ndarray | None
         Per-compound upper credible-interval bound for ``y_true``, aligned with
         ``y_true``/``y_pred``. Only consumed by metrics whose signature accepts
@@ -525,18 +476,17 @@ def score_single_structure(
 ) -> tuple[dict[str, float], list[str]]:
     """Score one predicted protein-ligand complex PDB against the reference.
 
-    Runs SCRMSDScorer (BiSyRMSD + LDDT-LP) and LDDTPLIScorer (LDDT-PLI) and
-    returns the top-scoring ligand pair ranked by LDDT-PLI then BiSyRMSD.
-    Also runs PoseBusters (dock config) on the predicted complex. The complex is
-    split into ligand and protein via ``Chem.SplitMolByPDBResidues``; bond orders
-    are recovered from ``smiles`` when provided (RDKit's PDB parser leaves every
-    bond single, which breaks geometry and energy checks). ``mol_cond`` is the
-    protein from the *predicted* complex so the ligand and receptor are in the
-    same coordinate frame. If the number of failed PoseBusters checks exceeds
-    ``max_pb_failures``, all three metric scores are overridden with worst-case
-    values (LDDT-PLI=0, LDDT-LP=0, BiSyRMSD=``BISYRMSD_NAN_PENALTY``).
-    Returns NaN for every metric if scoring fails for any reason, so that a
-    single bad submission file does not abort the full evaluation.
+    Runs OST's SCRMSDScorer (BiSyRMSD, LDDT-LP) and LDDTPLIScorer (LDDT-PLI) and keeps
+    the best ligand pair, by LDDT-PLI then BiSyRMSD. With ``smiles``, both ligands are
+    rebuilt with bonds from it (``ligand_bonds.ligands_from_pdb``), since OST's
+    distance-based guess adds false bonds across strained rings; if either can't be
+    rebuilt, both fall back to the guess.
+
+    PoseBusters (dock config) checks the predicted ligand against the predicted
+    protein, with bond orders from ``smiles`` when it matches. More than
+    ``max_pb_failures`` failed checks gives worst-case scores (LDDT 0, BiSyRMSD
+    ``BISYRMSD_NAN_PENALTY``). Any scoring error gives NaN for every metric, so one bad
+    file doesn't stop the evaluation.
 
     Parameters
     ----------
@@ -548,10 +498,10 @@ def score_single_structure(
         Maximum number of PoseBusters checks the predicted ligand may fail before
         its scores are zeroed. Defaults to ``POSEBUSTERS_MAX_FAILURES``.
     smiles : str | None
-        Ground-truth SMILES for the ligand, used to assign correct bond orders
-        before running PoseBusters. When ``None``, bond orders are left as parsed
-        (all single), which may cause false failures on geometry and energy
-        checks.
+        Ground-truth SMILES for the ligand, giving its bonds for OST and its bond
+        orders for PoseBusters. When ``None``, OST guesses the ligand's bonds from
+        atom distances and PoseBusters sees every bond as single, either of which
+        can cause false failures.
 
     Returns
     -------
@@ -596,6 +546,24 @@ def score_single_structure(
 
         logger.info("Scoring structure {} against reference {}", model_path, ref_path)
 
+        model_ligands: list = [model_lig]
+        target_ligands: list = [ref_lig]
+        bonded_model = None
+        if smiles is not None:
+            bonded_model = ligands_from_pdb(model_path, smiles)
+            bonded_ref = ligands_from_pdb(ref_path, smiles)
+            if bonded_model is not None and bonded_ref is not None:
+                model_ligands = [ost_ligand(bonded_model[0], "LIG_MODEL")]
+                target_ligands = [
+                    ost_ligand(lig, f"LIG_REF_{i}") for i, lig in enumerate(bonded_ref)
+                ]
+            else:
+                logger.warning(
+                    "Could not take the ligand bonds for {} from its SMILES; OST "
+                    "will guess them from atom distances.",
+                    model_path,
+                )
+
         # substructure_match=True allows the model ligand to be a subgraph of
         # the reference (handles partial docking output). coverage_delta=0.1
         # permits up to 10% atom coverage difference before the pair is
@@ -603,16 +571,16 @@ def score_single_structure(
         scrmsd_sc = SCRMSDScorer(
             model=model,
             target=ref,
-            model_ligands=[model_lig],
-            target_ligands=[ref_lig],
+            model_ligands=model_ligands,
+            target_ligands=target_ligands,
             substructure_match=True,
             coverage_delta=0.1,
         )
         lddt_pli_sc = LDDTPLIScorer(
             model=model,
             target=ref,
-            model_ligands=[model_lig],
-            target_ligands=[ref_lig],
+            model_ligands=model_ligands,
+            target_ligands=target_ligands,
             substructure_match=True,
             coverage_delta=0.1,
         )
@@ -699,7 +667,6 @@ def score_single_structure(
         # RDKit Mol objects directly to bust() (no temp file needed).
         from posebusters import PoseBusters  # type: ignore[import]
         from rdkit import Chem as _Chem  # type: ignore[import]
-        from rdkit.Chem import AllChem as _AllChem  # type: ignore[import]
 
         pred_mol = _Chem.MolFromPDBFile(model_path, removeHs=False, sanitize=False)
         if pred_mol is None:
@@ -720,23 +687,25 @@ def score_single_structure(
 
         pb_protein = None
         for frag in fragments.values():
-            pb_protein = frag if pb_protein is None else _Chem.CombineMols(pb_protein, frag)
+            pb_protein = (
+                frag if pb_protein is None else _Chem.CombineMols(pb_protein, frag)
+            )
 
         pb_template = None
-        if smiles is not None:
+        if bonded_model is not None:
+            pb_ligand = bonded_model[0]
             pb_template = _Chem.MolFromSmiles(smiles)
-            if pb_template is not None:
-                try:
-                    pb_ligand = _AllChem.AssignBondOrdersFromTemplate(pb_template, pb_ligand)
-                except Exception:  # noqa: BLE001
-                    logger.warning(
-                        "Bond order assignment failed for {} — PoseBusters will use single-bond ligand.",
-                        model_path,
-                    )
-                    pb_template = None
+        elif smiles is not None:
+            logger.warning(
+                "Bond order assignment failed for {} — PoseBusters will use "
+                "single-bond ligand.",
+                model_path,
+            )
 
         pb_sc = PoseBusters(config="dock")
-        pb_result = pb_sc.bust(mol_pred=pb_ligand, mol_true=pb_template, mol_cond=pb_protein)
+        pb_result = pb_sc.bust(
+            mol_pred=pb_ligand, mol_true=pb_template, mol_cond=pb_protein
+        )
 
         pb_bool_cols = [c for c in pb_result.columns if pb_result[c].dtype == bool]
         row = pb_result[pb_bool_cols].iloc[0]
@@ -761,38 +730,20 @@ def score_single_structure(
         return dict(_NAN_STRUCTURE_METRICS), []
 
 
-def dummy_score_single_structure(
-    model_path: str, ref_path: str
-) -> tuple[dict[str, float], list[str]]:
-    """Dummy scoring function that returns random scores for testing."""
-    import random
-
-    return {
-        "LDDT-PLI": random.uniform(0, 1),
-        "BiSyRMSD": random.uniform(0, 5),
-        "LDDT-LP": random.uniform(0, 1),
-    }, []
-
-
-def score_structure_predictions(
+def score_compounds_raw(
     predicted_structures: dict[str, str],
     ground_truth_structures: dict[str, str],
     max_pb_failures: int = POSEBUSTERS_MAX_FAILURES,
     smiles_map: dict[str, str] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, list[str]]]:
-    """Score all predicted protein-ligand complex PDB files against ground truth.
+    """Run OST and PoseBusters on every predicted complex: the expensive step.
 
-    Iterates over ``predicted_structures``, skipping any molecule ID not found
-    in ``ground_truth_structures``. A ``coverage`` column (1.0 = matched,
-    0.0 = failed) is added before NaN values are replaced with worst-case
-    penalties so every compound contributes to bootstrap aggregation:
-
-    - LDDT-PLI, LDDT-LP (↑ better): NaN → 0.0
-    - BiSyRMSD (↓ better): NaN → ``BISYRMSD_NAN_PENALTY``
-
-    Poses that fail more than ``max_pb_failures`` PoseBusters checks are zeroed
-    before aggregation (LDDT-PLI=0, LDDT-LP=0, BiSyRMSD=``BISYRMSD_NAN_PENALTY``);
-    those compounds still count as covered (coverage=1.0) since OST scored them.
+    Iterates over ``predicted_structures``, skipping any molecule ID not found in
+    ``ground_truth_structures``. Scores are left raw: a compound that could not be
+    scored has NaN metrics. ``apply_coverage_and_penalties`` turns them into the
+    per-compound table that is aggregated. Keeping the two steps apart means the
+    scoring runs once per submission however many compound sets are
+    aggregated from it, and lets the scoring be split across workers later.
 
     Parameters
     ----------
@@ -806,19 +757,17 @@ def score_structure_predictions(
         ``POSEBUSTERS_MAX_FAILURES``.
     smiles_map : dict[str, str] | None
         Optional mapping from molecule ID to ground-truth SMILES, forwarded to
-        ``score_single_structure`` for bond-order assignment before PoseBusters
-        runs. When ``None``, bond orders are left as parsed from PDB (all
-        single).
+        ``score_single_structure``. A compound missing from the mapping is scored
+        without SMILES.
 
     Returns
     -------
     tuple[pd.DataFrame, dict[str, list[str]]]
-        A pair of (per_compound_df, pb_failures) where per_compound_df has
-        columns ``Molecule_Name``, ``LDDT-PLI``, ``BiSyRMSD``, ``LDDT-LP``,
-        ``coverage`` (1.0 if successfully matched, 0.0 otherwise), and
-        pb_failures maps molecule ID to the sorted list of PoseBusters check
-        names that caused its scores to be zeroed. Only compounds that exceed
-        ``max_pb_failures`` appear in pb_failures.
+        A pair of (raw_df, pb_failures). ``raw_df`` has columns
+        ``Molecule_Name``, ``LDDT-PLI``, ``BiSyRMSD`` and ``LDDT-LP``, NaN where a
+        compound could not be scored. ``pb_failures`` maps molecule ID to the
+        sorted PoseBusters check names that caused its scores to be zeroed; only
+        compounds over ``max_pb_failures`` appear.
 
     """
     logger.info(
@@ -841,25 +790,91 @@ def score_structure_predictions(
         if failed_checks:
             pb_failures[mol_id] = failed_checks
 
-    per_compound_df = pd.DataFrame(rows)
-    n_scored = int(per_compound_df["LDDT-PLI"].notna().sum())
+    raw_df = pd.DataFrame(rows, columns=["Molecule_Name", *STRUCTURE_SPEC.metrics])
     logger.info(
         "Successfully scored {}/{} structures.",
-        n_scored,
+        int(raw_df["LDDT-PLI"].notna().sum()),
         len(predicted_structures),
     )
+    return raw_df, pb_failures
 
-    # Record coverage before filling so the per-compound parquet is transparent
+
+def apply_coverage_and_penalties(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Add the ``coverage`` column and fill unscored compounds with penalties.
+
+    ``coverage`` is 1.0 where OST matched the ligand (LDDT-PLI is not NaN) and
+    0.0 otherwise, recorded before filling so the per-compound parquet shows
+    which compounds failed. NaN values are then replaced with worst-case
+    penalties so every compound contributes to bootstrap aggregation:
+
+    - LDDT-PLI, LDDT-LP (higher is better): NaN -> 0.0
+    - BiSyRMSD (lower is better): NaN -> ``BISYRMSD_NAN_PENALTY``
+
+    Parameters
+    ----------
+    raw_df : pd.DataFrame
+        Output of ``score_compounds_raw``, or any subset of its rows.
+
+    Returns
+    -------
+    pd.DataFrame
+        A copy of ``raw_df`` with ``coverage`` added and the metrics filled.
+
+    """
+    per_compound_df = raw_df.copy()
     per_compound_df["coverage"] = per_compound_df["LDDT-PLI"].notna().astype(float)
-
-    # Apply worst-case penalties so every compound contributes to the bootstrap mean
     per_compound_df["LDDT-PLI"] = per_compound_df["LDDT-PLI"].fillna(0.0)
     per_compound_df["LDDT-LP"] = per_compound_df["LDDT-LP"].fillna(0.0)
     per_compound_df["BiSyRMSD"] = per_compound_df["BiSyRMSD"].fillna(
         BISYRMSD_NAN_PENALTY
     )
+    return per_compound_df
 
-    return per_compound_df, pb_failures
+
+def score_structure_predictions(
+    predicted_structures: dict[str, str],
+    ground_truth_structures: dict[str, str],
+    max_pb_failures: int = POSEBUSTERS_MAX_FAILURES,
+    smiles_map: dict[str, str] | None = None,
+) -> tuple[pd.DataFrame, dict[str, list[str]]]:
+    """Score all predicted protein-ligand complex PDB files against ground truth.
+
+    ``score_compounds_raw`` followed by ``apply_coverage_and_penalties``. Poses
+    that fail more than ``max_pb_failures`` PoseBusters checks are zeroed
+    (LDDT-PLI=0, LDDT-LP=0, BiSyRMSD=``BISYRMSD_NAN_PENALTY``); those compounds
+    still count as covered (coverage=1.0) since OST scored them.
+
+    Parameters
+    ----------
+    predicted_structures : dict[str, str]
+        Mapping from molecule ID to filesystem path of the predicted PDB file.
+    ground_truth_structures : dict[str, str]
+        Mapping from molecule ID to filesystem path of the reference PDB file.
+    max_pb_failures : int
+        Maximum number of PoseBusters checks a ligand may fail before its scores
+        are zeroed. Defaults to ``POSEBUSTERS_MAX_FAILURES``.
+    smiles_map : dict[str, str] | None
+        Optional mapping from molecule ID to ground-truth SMILES, forwarded to
+        ``score_single_structure``.
+
+    Returns
+    -------
+    tuple[pd.DataFrame, dict[str, list[str]]]
+        A pair of (per_compound_df, pb_failures) where per_compound_df has
+        columns ``Molecule_Name``, ``LDDT-PLI``, ``BiSyRMSD``, ``LDDT-LP``,
+        ``coverage`` (1.0 if successfully matched, 0.0 otherwise), and
+        pb_failures maps molecule ID to the sorted list of PoseBusters check
+        names that caused its scores to be zeroed. Only compounds that exceed
+        ``max_pb_failures`` appear in pb_failures.
+
+    """
+    raw_df, pb_failures = score_compounds_raw(
+        predicted_structures,
+        ground_truth_structures,
+        max_pb_failures=max_pb_failures,
+        smiles_map=smiles_map,
+    )
+    return apply_coverage_and_penalties(raw_df), pb_failures
 
 
 def bootstrap_structure_metrics(
@@ -876,7 +891,7 @@ def bootstrap_structure_metrics(
     ``bootstrap_metrics``, so ``average_bootstrap_results_by_endpoint`` can be
     reused unchanged. Coverage is a scalar property of the whole submission and
     is not bootstrapped — it is added to ``averaged_df`` separately in
-    ``score_structure_submission``.
+    ``aws_submission_processing.aggregate_structure_scores``.
 
     Parameters
     ----------
@@ -893,7 +908,7 @@ def bootstrap_structure_metrics(
         ``BiSyRMSD``, ``LDDT-LP``.
 
     """
-    _BOOTSTRAP_COLS = STRUCTURE_METRICS
+    _BOOTSTRAP_COLS = STRUCTURE_SPEC.metrics
     scores = per_compound_df[_BOOTSTRAP_COLS].to_numpy()
     n_compounds = scores.shape[0]
 
@@ -904,7 +919,7 @@ def bootstrap_structure_metrics(
         sample_means = np.mean(scores[idx], axis=0)
         row: dict[str, object] = {
             "Sample": sample_idx,
-            "Endpoint": STRUCTURE_ENDPOINTS[0],
+            "Endpoint": STRUCTURE_SPEC.endpoints[0],
         }
         for col, value in zip(_BOOTSTRAP_COLS, sample_means):
             row[col] = value

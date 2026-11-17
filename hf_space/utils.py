@@ -2,10 +2,11 @@
 
 import io
 import ipaddress
-import re
 import socket
 import time
-from urllib.parse import urljoin, urlparse
+from dataclasses import dataclass
+from datetime import datetime
+from urllib.parse import quote, urljoin, urlparse
 
 import boto3
 import pandas as pd
@@ -18,11 +19,6 @@ _MAX_REDIRECTS = 5
 # S3FS was causing 403 errors in testing on some machines, unclear why.
 # Switching to boto3 client which works reliably
 s3_client = boto3.client("s3", region_name=AWS_DEFAULT_REGION)
-
-BANNED_USERNAMES: dict[str, str] = {  # normalized (lowercase) username: reason
-    # Add entries here to block submissions from a HF username, e.g.:
-    # "some-username": "Suspected of using multiple HF accounts",
-}
 
 
 def _load_csv_from_s3(key: str, parquet: bool = False) -> pd.DataFrame:
@@ -50,7 +46,7 @@ def _is_safe_public_url(url: str) -> bool:
     """Reject URLs whose host resolves to a private/loopback/link-local address.
 
     Guards ``check_page_exists`` against SSRF: without this, a user-supplied URL
-    (e.g. the "Method Report Link" field) could point the server at internal
+    (e.g. the "Model Report Link" field) could point the server at internal
     infrastructure and have it echo back reachability.
     """
     hostname = urlparse(url).hostname
@@ -176,21 +172,61 @@ def check_page_exists(
         time.sleep(delay)
 
 
-def validate_hf_username(username: str) -> bool:
-    """Validate that the Hugging Face username exists by checking the profile page."""
-    # restrict_to_public=False: the target here is always the literal huggingface.co
-    # domain (hardcoded below, or enforced by the regex above), never an
-    # attacker-supplied host, so the SSRF guard in check_page_exists is not needed —
-    # and huggingface.co can legitimately resolve to an internal address when called
-    # from within HF's own infrastructure (split-horizon DNS), which that guard
-    # would otherwise reject.
-    if re.match(r"^https?://huggingface\.co/([^/]+)/?$", str(username).strip()):
-        return check_page_exists(
-            str(username).strip(), delay=1, max_retries=10, restrict_to_public=False
-        )
-    username = str(username).strip()
-    hf_url = f"https://huggingface.co/{username}"
-    return check_page_exists(hf_url, delay=1, max_retries=10, restrict_to_public=False)
+HF_USER_OVERVIEW_URL = "https://huggingface.co/api/users/{username}/overview"
+# Account details barely change, so each is looked up at most once an hour.
+_ACCOUNT_CACHE_SECONDS = 3600
+_account_cache: dict[str, tuple[float, "HFAccount"]] = {}
+
+
+@dataclass(frozen=True)
+class HFAccount:
+    """The public details of a Hugging Face account that the Space checks.
+
+    Attributes
+    ----------
+    id : str
+        The account's permanent ID, the same as the OAuth ``sub``.
+    created_at : datetime
+        When the account was created, in UTC.
+
+    """
+
+    id: str
+    created_at: datetime
+
+
+def fetch_hf_account(username: str) -> HFAccount:
+    """Look up a Hugging Face account's ID and creation date.
+
+    Uses the public user overview API (no token), cached per username for an hour.
+    Any failure (the API unreachable or answering with an error, or an answer
+    without a valid ID and creation date) propagates, so callers can fail closed.
+
+    Parameters
+    ----------
+    username : str
+        The account's username, from the OAuth profile.
+
+    Returns
+    -------
+    HFAccount
+        The account's ID and creation date.
+
+    """
+    cached = _account_cache.get(username)
+    if cached is not None and time.monotonic() - cached[0] < _ACCOUNT_CACHE_SECONDS:
+        return cached[1]
+    response = requests.get(
+        HF_USER_OVERVIEW_URL.format(username=quote(username, safe="")), timeout=10
+    )
+    response.raise_for_status()
+    data = response.json()
+    account = HFAccount(
+        id=str(data["_id"]),
+        created_at=datetime.fromisoformat(data["createdAt"].replace("Z", "+00:00")),
+    )
+    _account_cache[username] = (time.monotonic(), account)
+    return account
 
 
 def validate_model_details(tag: str) -> str:

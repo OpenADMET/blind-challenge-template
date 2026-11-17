@@ -36,20 +36,29 @@ If AI tools contributed materially to a PR, that's fine and you don't need to fl
    ```bash
    conda env create -f environment.yml      # or: mamba env create -f environment.yml
    conda activate blind-challenge-template
-   pytest tests/backend/
+   pytest tests/backend/ tests/scripts/
    ```
 
 ## Making changes
 
 - **Branch** off `main` with a descriptive name (`fix/leaderboard-tie-break`, `feat/extra-metric`).
 - **Match the surrounding code** — naming, docstring style, comment density. Look at nearby files before adding new patterns.
-- **Run the checks locally** before pushing:
+- **Run the checks locally** before pushing. These are what CI runs:
 
   ```bash
-  ruff check .
-  black --check .          # or: ruff format --check .
-  mypy backend
-  pytest tests/backend/ --cov=backend
+  # Backend and organiser scripts, in the conda environment
+  ruff check backend/ scripts/
+  mypy backend/ scripts/
+  pydoclint backend/ scripts/
+  pytest tests/backend/ tests/scripts/
+
+  # The HF Space, in a separate environment matching its pinned requirements
+  # (pip install -r hf_space/requirements.txt, plus the tools listed in
+  # .github/workflows/hf-space-checks.yml)
+  ruff check hf_space/
+  mypy hf_space/
+  pydoclint hf_space/
+  pytest tests/hf_space/
   ```
 
 - **Scoring / config changes:** `backend/config.py` and `hf_space/config.py` are the source of truth for endpoints and dataset sizes, and the test fixtures follow them. If you change endpoint names or sizes, regenerate the fixtures under `tests/backend/test_data/` and update `docs/` accordingly. Keep the two `config.py` files in sync.

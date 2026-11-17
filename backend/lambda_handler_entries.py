@@ -17,7 +17,7 @@ def handler(event, context):
     os.environ["HOME"] = "/tmp"
     os.environ["DUCKDB_HOME"] = "/tmp"
 
-    logger.info("Generating full entries list for both tracks")
+    logger.info("Generating the full entries list for every track")
     entries = create_all_entries_list()
     if entries.empty:
         return {

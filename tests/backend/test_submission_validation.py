@@ -4,7 +4,10 @@ import zipfile
 
 import pytest
 
-from backend.config import CLASSIFICATION_ENDPOINTS, REGRESSION_ENDPOINTS
+from backend.config import (
+    CLASSIFICATION_SPEC,
+    REGRESSION_SPEC,
+)
 from backend.submission_validation import (
     SubmissionError,
     ValidationResult,
@@ -112,7 +115,9 @@ def test_validate_regression_submission_missing_ids(example_activity_predictions
     assert "Missing expected molecule(s): E-9999999" in log_text
 
 
-def test_validate_regression_submission_unexpected_ids(example_activity_predictions_data):
+def test_validate_regression_submission_unexpected_ids(
+    example_activity_predictions_data,
+):
     """Test that a submission with unexpected molecule IDs fails validation."""
     expected_ids = set(example_activity_predictions_data["Molecule_Name"])
     unexpected_id = expected_ids.pop()
@@ -126,7 +131,7 @@ def test_validate_regression_submission_unexpected_ids(example_activity_predicti
 
 def test_validate_regression_missing_column(example_activity_predictions_data):
     """Test that a submission missing a required regression column fails validation."""
-    missing_col_name = REGRESSION_ENDPOINTS[-1]
+    missing_col_name = REGRESSION_SPEC.endpoints[-1]
     missing_col = example_activity_predictions_data.drop(columns=[missing_col_name])
     validation_result = validate_regression_submission(missing_col)
     log_text = validation_result.get_error_summary()
@@ -137,7 +142,9 @@ def test_validate_regression_missing_column(example_activity_predictions_data):
 
 def test_validate_regression_nan_values(example_activity_predictions_data):
     """Test that a submission with NaN values fails validation."""
-    example_activity_predictions_data.loc[0, REGRESSION_ENDPOINTS[0]] = float("nan")
+    example_activity_predictions_data.loc[0, REGRESSION_SPEC.endpoints[0]] = float(
+        "nan"
+    )
     validation_result = validate_regression_submission(
         example_activity_predictions_data
     )
@@ -145,13 +152,16 @@ def test_validate_regression_nan_values(example_activity_predictions_data):
     assert not validation_result.is_valid
     assert "Validation failed" in log_text
     assert (
-        f"- Column '{REGRESSION_ENDPOINTS[0]}' Failed check 'not_nullable'" in log_text
+        f"- Column '{REGRESSION_SPEC.endpoints[0]}' Failed check 'not_nullable'"
+        in log_text
     )
 
 
 def test_validate_regression_inf_values(example_activity_predictions_data):
     """Test that a submission with infinite values fails validation."""
-    example_activity_predictions_data.loc[0, REGRESSION_ENDPOINTS[0]] = float("inf")
+    example_activity_predictions_data.loc[0, REGRESSION_SPEC.endpoints[0]] = float(
+        "inf"
+    )
     validation_result = validate_regression_submission(
         example_activity_predictions_data
     )
@@ -159,7 +169,7 @@ def test_validate_regression_inf_values(example_activity_predictions_data):
     assert not validation_result.is_valid
     assert "Validation failed" in log_text
     assert (
-        f"- Column '{REGRESSION_ENDPOINTS[0]}' Failed check 'Column contains infinite values "
+        f"- Column '{REGRESSION_SPEC.endpoints[0]}' Failed check 'Column contains infinite values "
         "(inf).'" in log_text
     )
 
@@ -212,7 +222,7 @@ def test_validate_classification_submission_unexpected_ids(
 
 def test_validate_classification_missing_column(example_activity_predictions_data):
     """Test that a submission missing a required classification column fails."""
-    missing_col_name = CLASSIFICATION_ENDPOINTS[-1]
+    missing_col_name = CLASSIFICATION_SPEC.endpoints[-1]
     missing_col = example_activity_predictions_data.drop(columns=[missing_col_name])
     validation_result = validate_classification_submission(missing_col)
     log_text = validation_result.get_error_summary()
@@ -225,7 +235,7 @@ def test_validate_classification_non_binary_value(
     example_activity_predictions_data,
 ):
     """Test that a non-binary value (e.g. a float) in a classification column fails validation."""
-    endpoint = CLASSIFICATION_ENDPOINTS[0]
+    endpoint = CLASSIFICATION_SPEC.endpoints[0]
     # Cast to object first — the fixture's column is int64, and assigning a float
     # into it would trigger a pandas FutureWarning about implicit whole-column
     # upcasting. object dtype also mirrors a real mixed-type submission column.
@@ -250,7 +260,7 @@ def test_validate_classification_binary_values_pass(
     example_activity_predictions_data, value
 ):
     """Test that 0, 1, True, and False all pass the classification column's binary check."""
-    endpoint = CLASSIFICATION_ENDPOINTS[0]
+    endpoint = CLASSIFICATION_SPEC.endpoints[0]
     # Cast to object first — see comment in test_validate_classification_non_binary_value.
     example_activity_predictions_data[endpoint] = example_activity_predictions_data[
         endpoint
@@ -340,9 +350,19 @@ def _structure_zip_with(tmp_path, source_zip, replacements: dict[str, str]):
     ("pdb_text", "expected_count"),
     [
         # Two separate ligand copies (different chains) — a best-of-two guess.
-        (complex_pdb(benzene(OFFSET, "B", 1), benzene(SITE, "C", 1, first_serial=600)), 2),
+        (
+            complex_pdb(
+                benzene(OFFSET, "B", 1), benzene(SITE, "C", 1, first_serial=600)
+            ),
+            2,
+        ),
         # Two copies in the same chain with different residue numbers.
-        (complex_pdb(benzene(SITE, "B", 1), benzene(SITE_2, "B", 2, first_serial=600)), 2),
+        (
+            complex_pdb(
+                benzene(SITE, "B", 1), benzene(SITE_2, "B", 2, first_serial=600)
+            ),
+            2,
+        ),
         # Ligand present but not named LIG.
         (complex_pdb(benzene(SITE)).replace(" LIG ", " UNL "), 0),
     ],
@@ -360,11 +380,15 @@ def test_validate_structure_submission_requires_exactly_one_ligand(
     bad = _structure_zip_with(
         tmp_path, example_structure_data_path, {"STRUCT-0002.pdb": pdb_text}
     )
-    result = validate_structure_submission(bad, expected_ids=example_structure_expected_ids)
+    result = validate_structure_submission(
+        bad, expected_ids=example_structure_expected_ids
+    )
     assert not result.is_valid
     assert len(result.errors) == 1
     assert "exactly one predicted ligand pose" in result.errors[0].message
-    assert result.errors[0].details == [f"STRUCT-0002.pdb: {expected_count} LIG residues"]
+    assert result.errors[0].details == [
+        f"STRUCT-0002.pdb: {expected_count} LIG residues"
+    ]
 
 
 def test_validate_structure_submission_lists_every_offending_file(
@@ -376,7 +400,9 @@ def test_validate_structure_submission_lists_every_offending_file(
         example_structure_data_path,
         {"STRUCT-0001.pdb": two, "STRUCT-0003.pdb": two},
     )
-    result = validate_structure_submission(bad, expected_ids=example_structure_expected_ids)
+    result = validate_structure_submission(
+        bad, expected_ids=example_structure_expected_ids
+    )
     assert result.errors[0].details == [
         "STRUCT-0001.pdb: 2 LIG residues",
         "STRUCT-0003.pdb: 2 LIG residues",
@@ -394,5 +420,7 @@ def test_validate_structure_submission_altloc_conformers_are_one_ligand(
     ok = _structure_zip_with(
         tmp_path, example_structure_data_path, {"STRUCT-0002.pdb": altlocs}
     )
-    result = validate_structure_submission(ok, expected_ids=example_structure_expected_ids)
+    result = validate_structure_submission(
+        ok, expected_ids=example_structure_expected_ids
+    )
     assert result.is_valid, result.get_error_summary()

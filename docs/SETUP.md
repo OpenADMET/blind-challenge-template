@@ -85,7 +85,9 @@ The challenge repo stores all code and drives CI/CD. On pushes/merges to `main`,
    - If you set the `NAME_MUST_CONTAIN` Actions variable (see below), the name must contain that substring — OpenADMET sets it to `challenge` so a shared `*challenge*` IAM policy covers the resources. Leave the variable unset to skip that check.
    - Keep it to **34 characters or fewer**. It's used as-is or with suffixes (e.g. `-classification-object-created`) to name AWS resources, and EventBridge rule names cap out at 64 characters — `opentofu/variables.tf`'s validation block will reject anything longer at `tofu plan`/`apply`.
 
-5. **Update `hf_space/`** for your challenge — mainly `config.py` and `README.md` (endpoint definitions, links, page content). `leaderboards.py` may need minor tweaks. Add the logo as `hf_space/_static/challenge_logo.png` (not shipped in the template — Git LFS pointers break when the `.git` dir is reinitialised).
+5. **Update `hf_space/`** for your challenge — mainly `config.py` and `README.md` (endpoint definitions, links including `DISCORD_LINK`, deadlines and page content). The deadlines must match `backend/config.py` (the drift test checks); the Space uses them for the status line under the header and, when `REQUIRE_MODEL_REPORT` is on, a model report reminder in the last `MODEL_REPORT_REMINDER_DAYS` before submissions close. Both update with the date, without restarting the Space. Set the Space's colours and font with the `THEME_*` settings (a Gradio colour name or a hex colour each). Add the logo at `LOGO_PATH` (default `hf_space/_static/challenge_logo.png`; not shipped in the template — Git LFS pointers break when the `.git` dir is reinitialised); the header shows it once the file exists.
+
+   **Sign-in with Hugging Face.** Submissions come from the logged-in Hugging Face account: `hf_space/README.md` sets `hf_oauth: true`, and HF then provides the OAuth settings to the Space itself (no secrets to add). Accounts younger than `MIN_ACCOUNT_AGE_DAYS` (default 1) can't submit. Submissions are made on the Space's Submit tab; programmatic submission isn't supported. Organisers submit baselines the same way, logged in to an organiser's account. To run the Space locally (`cd hf_space && python app.py`), log in to Hugging Face on that machine first (`hf auth login`): outside a Space, Gradio's login button signs you in as that account.
 
 6. **Update `backend/`, `tests/`, and `README.md`** as needed. Work through every `TODO` (see the repo README for the Todo Tree tip), then run `pytest tests/backend/`.
 
@@ -119,7 +121,7 @@ The challenge repo stores all code and drives CI/CD. On pushes/merges to `main`,
     Edit, don't delete:
 
     - `README.md` — rewrite for your challenge (step 6).
-    - `docs/SETUP.md` — remove the "Internal (OpenADMET)" note near the top; the rest is a useful reference.
+    - `docs/SETUP.md` — a useful reference; trim what doesn't apply to your organisation.
     - `environment.yml` — change `name: blind-challenge-template` to your challenge slug.
     - `.github/ISSUE_TEMPLATE/config.yml` — repoint the Discussions / security URLs at your repo (or delete for plain issue templates).
 
@@ -131,7 +133,7 @@ The challenge repo stores all code and drives CI/CD. On pushes/merges to `main`,
    git commit -m "initial commit"
    ```
 
-14. Push to GitHub. Four workflows run: the naming guardrail, backend unit tests, OpenTofu apply (AWS), and the HF Space deploy (fails until the Space exists).
+14. Push to GitHub. Five workflows run: the naming guardrail, the backend and Space checks, OpenTofu apply (AWS), and the HF Space deploy (fails until the Space exists).
 
 ## Setting up the AWS backend
 
@@ -188,6 +190,8 @@ aws iam attach-group-policy \
 
 The policy keys off the literal substring `challenge` in resource names. Set the `NAME_MUST_CONTAIN=challenge` Actions variable so the naming guardrail enforces it; if you scope the policy to a different substring, match `NAME_MUST_CONTAIN` to it. `CHALLENGE_NAME` / `GITHUB_ORG` don't affect this policy (it globs `*challenge*`) but `render.sh` still requires them — any value works when running Step 0 standalone; run from a configured challenge repo and it reads them from `variables.tf` / `backend.hcl` automatically.
 
+The policy also allows `access-analyzer:ValidatePolicy` (read-only), which the S3 console's bucket-policy editor calls on save; without it a group member gets an "Unknown Error". If you created the group's policy before v0.2.0, re-render it and add it as a new version (`aws iam create-policy-version --policy-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/challenge-developers" --policy-document file://opentofu/policies/.rendered/challenge-developers-policy.json --set-as-default`).
+
 ### Step 1: Create this challenge's IAM identities, get the HF Space credentials
 
 From the repo root:
@@ -236,6 +240,8 @@ aws s3 cp "activity-identifiers.parquet" "s3://${BUCKET}/${PREFIX}/activity-iden
 aws s3 cp "structure-dataset.zip"        "s3://${BUCKET}/${PREFIX}/structure-dataset.zip"        --only-show-errors
 aws s3 cp "structure-identifiers.parquet" "s3://${BUCKET}/${PREFIX}/structure-identifiers.parquet" --only-show-errors
 ```
+
+Both identifiers files need `Molecule_Name` and `set` columns; `set` is `live` or `hidden` (see [phases-and-stages.md](phases-and-stages.md) for which leaderboard ranks on which set). Also give `structure-identifiers.parquet` a `SMILES` column with each ligand's ground-truth SMILES: scoring then takes the ligand bonds from it rather than guessing them from atom distances, which makes compounds with strained rings unscoreable and causes false PoseBusters failures (see [structure-scoring.md](structure-scoring.md)). Without it, scoring still works, with bonds guessed from atom distances.
 
 ### Step 3: Create the GitHub Actions deploy role, set GitHub secrets
 
@@ -292,6 +298,22 @@ Two channels per challenge works well: one for discussion, one for submission fe
 1. Edit Channel → Integrations → Webhooks → (pick or create one) → Copy Webhook URL → put it in the `DISCORD_WEBHOOK_URL` GitHub secret.
 
 To disable Discord notifications entirely, set `DISCORD_NOTIFICATIONS=0` in the backend environment.
+
+## Running the challenge
+
+Once it's open, the organiser tools are in [`scripts/`](../scripts/README.md):
+
+- **Interim and final leaderboards:** `scripts/interim_leaderboard.ipynb` after
+  `INTERIM_LEADERBOARD_DEADLINE`, `scripts/final_leaderboard.ipynb` after
+  `FINAL_LEADERBOARD_DEADLINE`. Each builds, checks and uploads the boards, then says
+  what to set `CURRENT_PHASE` to. The final one also writes the files for the Space's
+  Head-to-Head tab, which appears in phase 4 (`HEAD_TO_HEAD_ENABLED` in
+  `hf_space/config.py`).
+- **Taking entries off the leaderboard:** `scripts/quarantine_submissions.py`
+  ([removing-entries.md](removing-entries.md)).
+- **Banning an account:** `scripts/manage_bans.py` ([bans.md](bans.md)).
+- **Clearing the bucket after testing**, before the challenge opens:
+  [removing-entries.md](removing-entries.md#clearing-the-bucket-after-testing).
 
 ## Troubleshooting
 

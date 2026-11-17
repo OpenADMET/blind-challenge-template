@@ -1,5 +1,8 @@
 """Tests for AWS leaderboard/manifest generation functions."""
 
+import dataclasses
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,11 +16,10 @@ from backend.aws_leaderboards import (
 )
 from backend.config import (
     CLASSIFICATION_PATHS,
+    CLASSIFICATION_SPEC,
     REGRESSION_PATHS,
-    SORT_STRUCTURE_LEADERBOARD_BY,
-    STRUCTURE_ENDPOINTS,
-    STRUCTURE_METRICS,
     STRUCTURE_PATHS,
+    STRUCTURE_SPEC,
     TrackPaths,
 )
 
@@ -27,22 +29,18 @@ from backend.config import (
 )
 def test_leaderboard_file_path_known_tracks(track_paths):
     """Every real track resolves to a leaderboard path without raising."""
-    path = _leaderboard_file_path(
-        track_paths.track, "live", "MA", "latest"
-    )
+    path = _leaderboard_file_path(track_paths.track, "live", "MA", "latest")
     assert path == f"{track_paths.leaderboard_live}/MA_leaderboard_latest.csv"
 
 
 def test_create_track_leaderboards_empty_endpoints_is_a_noop():
-    """A track with no endpoints (e.g. CLASSIFICATION_ENDPOINTS = []) returns {}
+    """A track with no endpoints (e.g. CLASSIFICATION_SPEC.endpoints = []) returns {}
     rather than raising IndexError on track_paths.endpoints[0]."""
-    empty_track = TrackPaths(track="classification", valid_filenames=frozenset(), endpoints=[])
-    result = create_track_leaderboards(
-        track_paths=empty_track,
-        stage="live",
-        primary_metric="MCC",
-        metric_sort_ascending=False,
+    empty_track = TrackPaths(
+        spec=dataclasses.replace(CLASSIFICATION_SPEC, endpoints=[]),
+        valid_filenames=frozenset(),
     )
+    result = create_track_leaderboards(track_paths=empty_track, stage="live")
     assert result == {}
 
 
@@ -65,22 +63,11 @@ def test_narrow_averaged_results_to_endpoint():
     assert narrowed_macro["RAE_mean"].iloc[0] == 0.2
 
 
-def test_narrow_averaged_results_to_endpoint_is_case_insensitive():
-    """Structure score files saved before v0.1.1 use a "Structure_" prefix while
-    STRUCTURE_ENDPOINTS is ["structure"]; narrowing must still find them."""
-    wide = pd.DataFrame({"Structure_LDDT-PLI_mean": [0.8], "Structure_LDDT-PLI_std": [0.1]})
-    narrowed = _narrow_averaged_results_to_endpoint(wide, STRUCTURE_ENDPOINTS[0])
-    assert set(narrowed.columns) == {"LDDT-PLI_mean", "LDDT-PLI_std"}
-    assert narrowed["LDDT-PLI_mean"].iloc[0] == 0.8
-
-
-def _structure_scores(monkeypatch, lddt_pli: float, endpoint_label: str | None = None):
+def _structure_scores(lddt_pli: float):
     """Run the real structure aggregation on a synthetic per-compound table.
 
-    Monkeypatches out OST scoring only; bootstrapping, averaging, coverage and the
-    wide pivot are the production code path in ``score_structure_submission``.
-    ``endpoint_label`` relabels the bootstrap rows, to mimic files scored before
-    v0.1.1 with the hard-coded "Structure" label.
+    Skips OST scoring only; bootstrapping, averaging, coverage and the wide pivot are
+    the production code path (``aggregate_structure_scores``).
     """
     rng = np.random.default_rng(0)
     n = 20
@@ -93,31 +80,14 @@ def _structure_scores(monkeypatch, lddt_pli: float, endpoint_label: str | None =
             "coverage": 1.0,
         }
     )
-    monkeypatch.setattr(
-        asp, "score_structure_predictions", lambda predicted, gt: (per_compound, {})
-    )
-    if endpoint_label is not None:
-        real_bootstrap = asp.bootstrap_structure_metrics
-        monkeypatch.setattr(
-            asp,
-            "bootstrap_structure_metrics",
-            lambda df, b: real_bootstrap(df, b).assign(Endpoint=endpoint_label),
-        )
-    _, bootstrap_df, averaged_df, _ = asp.score_structure_submission(
-        predicted={}, phase=0, ground_truth={}
-    )
-    monkeypatch.undo()
+    _, bootstrap_df, averaged_df = asp.aggregate_structure_scores(per_compound, "all")
     return averaged_df, bootstrap_df
 
 
 def test_structure_leaderboard_builds_end_to_end(monkeypatch):
     """Regression test for #25: a structure leaderboard builds from real aggregation
-    output, including an entry scored under the pre-v0.1.1 "Structure" label."""
-    scores = [
-        _structure_scores(monkeypatch, 0.9),
-        _structure_scores(monkeypatch, 0.5),
-        _structure_scores(monkeypatch, 0.7, endpoint_label="Structure"),
-    ]
+    output."""
+    scores = [_structure_scores(0.9), _structure_scores(0.5), _structure_scores(0.7)]
     manifest = pd.DataFrame(
         {
             "username": ["alice", "bob", "carol"],
@@ -131,7 +101,7 @@ def test_structure_leaderboard_builds_end_to_end(monkeypatch):
         manifest=manifest,
         averaged_scores={i: avg for i, (avg, _) in enumerate(scores)},
         bootstrap_scores={i: boot for i, (_, boot) in enumerate(scores)},
-        primary_metric=SORT_STRUCTURE_LEADERBOARD_BY,
+        primary_metric=STRUCTURE_SPEC.primary_metric,
         metric_sort_ascending=False,
         comparisons="tiers",
         endpoint=STRUCTURE_PATHS.endpoints[0],
@@ -139,5 +109,140 @@ def test_structure_leaderboard_builds_end_to_end(monkeypatch):
     )
     assert list(leaderboard["username"]) == ["alice", "carol", "bob"]
     assert leaderboard["coverage_mean"].tolist() == [1.0, 1.0, 1.0]
-    for metric in STRUCTURE_METRICS:
+    for metric in STRUCTURE_SPEC.metrics:
         assert leaderboard[f"{metric}_mean"].notna().all()
+
+
+@pytest.mark.parametrize(
+    ("track_paths", "ascending", "extra"),
+    [
+        (REGRESSION_PATHS, True, []),
+        (CLASSIFICATION_PATHS, False, []),
+        (STRUCTURE_PATHS, False, ["coverage_mean"]),
+    ],
+)
+def test_create_track_leaderboards_ranks_by_the_track_spec(
+    monkeypatch, track_paths, ascending, extra
+):
+    """#16: ranking metric, direction and extra columns come from the TrackSpec."""
+    import backend.aws_leaderboards as al
+
+    monkeypatch.setattr(
+        al,
+        "_fetch_leaderboard_manifest_and_scores",
+        lambda **kwargs: (pd.DataFrame({"username": ["a"]}), {}, {}),
+    )
+    calls = []
+    monkeypatch.setattr(
+        al,
+        "_build_final_leaderboard",
+        lambda **kwargs: (
+            calls.append(kwargs)
+            or SimpleNamespace(leaderboard_df=None, comparison_df=None)
+        ),
+    )
+
+    create_track_leaderboards(track_paths=track_paths, stage="live")
+
+    assert calls
+    for kwargs in calls:
+        assert kwargs["primary_metric"] == track_paths.spec.primary_metric
+        assert kwargs["metric_sort_ascending"] is ascending
+        assert kwargs["additional_columns"] == extra
+
+
+@pytest.mark.parametrize(
+    ("require_report", "kept"),
+    [(True, ["good", "ghost"]), (False, ["good", "no_report", "ghost"])],
+)
+def test_final_stage_model_report_requirement(monkeypatch, require_report, kept):
+    """REQUIRE_MODEL_REPORT decides whether entries without a reachable model
+    report are dropped from the final leaderboard. Usernames aren't re-checked:
+    they come from the Space's Hugging Face login."""
+    import backend.aws_leaderboards as al
+
+    manifest = pd.DataFrame(
+        {
+            "username": ["good", "no_report", "ghost"],
+            "model_report_link": ["https://example.org/r", "", "https://example.org/r"],
+            "all_scores_uri": ["s3://b/1", "s3://b/2", "s3://b/3"],
+        }
+    )
+    monkeypatch.setattr(al, "create_manifest", lambda **kwargs: manifest.copy())
+    monkeypatch.setattr(
+        al,
+        "validate_model_details",
+        lambda link: link if link else "Not submitted",
+    )
+    monkeypatch.setattr(al, "get_averaged_scores_for_leaderboard", lambda m: {})
+    monkeypatch.setattr(al, "REQUIRE_MODEL_REPORT", require_report)
+
+    result, _, _ = al._fetch_leaderboard_manifest_and_scores(
+        track="regression", stage="final", remove_invalid=True, with_bootstrap=False
+    )
+
+    assert list(result["username"]) == kept
+
+
+@pytest.mark.parametrize(
+    ("stage", "column"), [("live", "live_scores_uri"), ("final", "hidden_scores_uri")]
+)
+def test_each_stage_ranks_on_its_compound_set(monkeypatch, stage, column):
+    """#16: a track can rank live on live compounds and finally on hidden ones."""
+    import backend.aws_leaderboards as al
+
+    spec = dataclasses.replace(
+        CLASSIFICATION_SPEC,
+        leaderboard_sets={"live": "live", "interim": "hidden", "final": "hidden"},
+    )
+    monkeypatch.setitem(
+        al._TRACK_PATHS,
+        "classification",
+        dataclasses.replace(CLASSIFICATION_PATHS, spec=spec),
+    )
+    manifest = pd.DataFrame(
+        {
+            "username": ["a"],
+            "model_report_link": ["https://example.org/r"],
+            "live_scores_uri": ["s3://b/live"],
+            "hidden_scores_uri": ["s3://b/hidden"],
+        }
+    )
+    monkeypatch.setattr(al, "create_manifest", lambda **kwargs: manifest.copy())
+    monkeypatch.setattr(al, "get_averaged_scores_for_leaderboard", lambda m: {})
+
+    result, _, _ = al._fetch_leaderboard_manifest_and_scores(
+        track="classification", stage=stage, remove_invalid=False, with_bootstrap=False
+    )
+
+    assert result["scores_uri_for_leaderboard"].iloc[0] == manifest[column].iloc[0]
+
+
+def test_build_track_leaderboards_keeps_the_manifest_and_master_comparisons(
+    monkeypatch,
+):
+    """The head-to-head release needs the manifest and the master's comparisons."""
+    import backend.aws_leaderboards as al
+
+    manifest = pd.DataFrame({"username": ["a", "b"]})
+    monkeypatch.setattr(
+        al,
+        "_fetch_leaderboard_manifest_and_scores",
+        lambda **kwargs: (manifest, {}, {}),
+    )
+
+    def _built(**kwargs):
+        comparisons = (
+            pd.DataFrame({"entry_a": ["a"], "entry_b": ["b"]})
+            if kwargs["comparisons"]
+            else None
+        )
+        board = pd.DataFrame({"rank": [1, 2], "username": ["a", "b"]})
+        return SimpleNamespace(leaderboard_df=board, comparison_df=comparisons)
+
+    monkeypatch.setattr(al, "_build_final_leaderboard", _built)
+    result = al.build_track_leaderboards(REGRESSION_PATHS, stage="final")
+    assert result.master_slug == "MA"
+    assert result.manifest is manifest
+    assert list(result.comparisons["entry_a"]) == ["a"]
+    assert set(result.leaderboards) == {*REGRESSION_PATHS.endpoints, "MA"}

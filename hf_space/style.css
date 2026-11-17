@@ -1,0 +1,312 @@
+/* Styles for the Space, passed to launch(css_paths=...). Colours come from the
+   theme's CSS variables where possible, so they follow config.py's THEME_* settings
+   and dark mode. */
+
+/* --- Header --- */
+.challenge-header {
+    align-items: center;
+}
+
+.status-line {
+    margin: 4px 0 12px;
+    color: var(--body-text-color-subdued);
+    font-size: var(--text-md);
+}
+
+.status-line p {
+    margin: 0;
+}
+
+.link-buttons {
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+/* --- Banners --- */
+.banner {
+    margin: 0 0 16px;
+    padding: 14px 18px;
+    border-radius: var(--radius-lg);
+    border: 2px solid;
+    text-align: center;
+}
+
+.banner strong {
+    display: block;
+    font-size: var(--text-lg);
+    margin-bottom: 4px;
+}
+
+.banner p {
+    margin: 0;
+}
+
+.banner-warning {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #78350f;
+}
+
+.dark .banner-warning {
+    background: rgba(245, 158, 11, 0.14);
+    color: #fde68a;
+}
+
+/* --- Submit tab --- */
+.login-card {
+    padding: 14px 16px;
+    gap: 12px;
+    border: 1px solid var(--border-color-primary);
+    border-radius: var(--radius-lg);
+    background: var(--block-background-fill);
+}
+
+.login-note,
+.login-note p {
+    margin: 0;
+    color: var(--body-text-color-subdued);
+    text-align: center;
+}
+
+.login-button-row {
+    justify-content: center;
+}
+
+/* Steps 3 and 4 side by side: their field boxes stretch to the same height. */
+.entry-row > .column > .form {
+    flex-grow: 1;
+}
+
+.entry-row > .column > .block:first-child {
+    flex-grow: 0;
+}
+
+/* Track options stacked, full width, so the box lines up with the file drop. */
+.track-select .wrap {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.track-select .wrap label {
+    width: 100%;
+}
+
+/* --- Markdown tables (About tab) --- */
+#welcome-md table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+#welcome-md th,
+#welcome-md td {
+    padding: 10px;
+    border: 1px solid var(--border-color-primary);
+}
+
+#welcome-md thead th {
+    background: var(--background-fill-secondary);
+}
+
+/* --- Leaderboards --- */
+.leaderboard-note {
+    color: var(--body-text-color-subdued);
+    font-size: var(--text-sm);
+}
+
+.leaderboard-note p {
+    margin: 2px 0;
+}
+
+.leaderboard-toolbar {
+    align-items: flex-end;
+    gap: 12px;
+}
+
+/* The endpoint picker fills the row, with the Download CSV button at its right at
+   the same height; on a single-endpoint track the button sits alone at the right. */
+.track-controls {
+    align-items: stretch;
+    justify-content: flex-end;
+}
+
+.track-controls .download-button {
+    height: auto !important;
+    min-height: 100%;
+    align-self: stretch;
+}
+
+/* No alternate-row striping: shading marks significance tiers or the top three. */
+.leaderboard-table .virtual-row {
+    background: var(--background-fill-primary) !important;
+}
+
+/* The theme's font with equal-width digits, so numbers line up. */
+.leaderboard-table [role="gridcell"],
+.leaderboard-table [role="columnheader"],
+.leaderboard-table .cell-wrap span {
+    font-family: var(--font);
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- Template credit (the class lands on the block and its text; style the text) --- */
+.prose.template-credit {
+    margin-top: 24px;
+    text-align: center;
+    font-size: var(--text-sm);
+    color: var(--body-text-color-subdued);
+}
+
+/* --- Head-to-Head tab --- */
+.h2h-cards {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 16px;
+    align-items: stretch;
+    margin: 4px 0 8px;
+}
+
+.h2h-card {
+    border: 1px solid var(--border-color-primary);
+    border-radius: var(--radius-lg);
+    padding: 18px 22px;
+    background: var(--block-background-fill);
+}
+
+.h2h-card.a {
+    border-top: 5px solid #2f6db5;
+}
+
+.h2h-card.b {
+    border-top: 5px solid #e07a2e;
+}
+
+.h2h-rank,
+.h2h-note,
+.h2h-metric small {
+    color: var(--body-text-color-subdued);
+}
+
+.h2h-rank {
+    font-size: var(--text-sm);
+}
+
+.h2h-name {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 2px 0 8px;
+    overflow-wrap: anywhere;
+}
+
+.h2h-metric {
+    font-size: 26px;
+    font-weight: 700;
+}
+
+.h2h-metric small {
+    font-size: var(--text-md);
+    font-weight: 400;
+}
+
+.h2h-vs {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    min-width: 190px;
+    gap: 8px;
+    padding: 8px 12px;
+}
+
+.h2h-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: var(--text-sm);
+}
+
+.h2h-badge.sig {
+    background: #e8f5e9;
+    color: #1b5e20;
+}
+
+.h2h-badge.nsig {
+    background: #f1f3f5;
+    color: #495057;
+}
+
+.dark .h2h-badge.sig {
+    background: rgba(46, 125, 50, 0.25);
+    color: #a5d6a7;
+}
+
+.dark .h2h-badge.nsig {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ced4da;
+}
+
+.h2h-note {
+    font-size: var(--text-sm);
+}
+
+.h2h-panel {
+    padding: 10px 16px;
+}
+
+.h2h-panel .h2h-note {
+    margin: 10px 4px 0;
+}
+
+.h2h-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-md);
+    font-variant-numeric: tabular-nums;
+}
+
+.h2h-table th,
+.h2h-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color-primary);
+    text-align: right;
+}
+
+.h2h-table th:first-child,
+.h2h-table td:first-child {
+    text-align: left;
+}
+
+.h2h-table .better {
+    font-weight: 700;
+}
+
+.h2h-loading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+}
+
+.h2h-spinner {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    border-radius: 50%;
+    border: 3px solid var(--border-color-primary);
+    border-top-color: var(--color-accent);
+    animation: h2h-spin 0.8s linear infinite;
+}
+
+@keyframes h2h-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 760px) {
+    .h2h-cards {
+        grid-template-columns: 1fr;
+    }
+}

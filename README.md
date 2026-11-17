@@ -19,7 +19,7 @@ See [`docs/SETUP.md`](docs/SETUP.md) for the step-by-step checklist to stand up 
 
 ## Customising this template for a new challenge
 
-Everything a new challenge needs to fill in is marked with a `TODO` comment: endpoint names, dataset sizes, and deadlines in [`backend/config.py`](backend/config.py); endpoint names, external links, and the page-content markdown in [`hf_space/config.py`](hf_space/config.py); example counts/names in `docs/`; and the Space title in [`hf_space/README.md`](hf_space/README.md). The two `config.py` files are the source of truth — `hf_space/config.py` must mirror `backend/config.py`'s endpoint lists and dataset sizes.
+Everything a new challenge needs to fill in is marked with a `TODO` comment: endpoint names, dataset sizes, and deadlines in [`backend/config.py`](backend/config.py); endpoint names, external links, and the page-content markdown in [`hf_space/config.py`](hf_space/config.py); example counts/names in `docs/`; and the Space title in [`hf_space/README.md`](hf_space/README.md). The two `config.py` files are the source of truth. Each track is defined once per side in a `TrackSpec` (endpoints, metrics, ranking, dataset size); `hf_space/config.py` must mirror `backend/config.py`, and `tests/backend/test_config_drift.py` fails if they differ. Which tracks the Space shows, on the Submit tab and on each leaderboard stage, is set in `hf_space/config.py`'s `TRACK_VISIBILITY`.
 
 The quickest way to see every fill-in point at once is the [**Todo Tree**](https://marketplace.visualstudio.com/items?itemName=Gruntfuggly.todo-tree) VS Code extension, which lists all `TODO` markers across the repo in a single tree view (markdown `TODO`s use `<!-- TODO: ... -->` comments so they don't render on the Space but are still picked up). Outside VS Code, `grep -rn "TODO" backend/config.py hf_space/config.py` or `grep -rn "TODO:" --include='*.py' --include='*.md' --include='*.yml' .` gives the same list. Work through them all, then run `pytest tests/backend/`. The test fixtures under `tests/backend/test_data/` follow whatever endpoint names and sizes `backend/config.py` declares — regenerate them after any such change with `python tests/backend/generate_test_data.py`. That data is fully synthetic (fixed-seed random values, textbook SMILES, stub PDBs); never commit real challenge data there.
 
@@ -32,11 +32,12 @@ The quickest way to see every fill-in point at once is the [**Todo Tree**](https
 | Path | Contents |
 |------|----------|
 | [`backend/`](backend/README.md) | Submission validation, bootstrapped scoring, leaderboard generation, and the AWS Lambda handlers |
-| [`hf_space/`](hf_space/README.md) | The Gradio app (submission form, leaderboards) deployed to the HF Space |
+| [`hf_space/`](hf_space/README.md) | The Gradio app (submission form, leaderboards, head-to-head) deployed to the HF Space |
+| [`scripts/`](scripts/README.md) | Organiser scripts: interim and final leaderboard notebooks, quarantine, bans |
 | [`opentofu/`](opentofu/README.md) | OpenTofu config provisioning all AWS resources (S3, Lambda, EventBridge, IAM, ECR, Secrets Manager) |
 | [`docs/`](docs/scoring-and-leaderboards.md) | Design docs — scoring/leaderboard pipeline diagrams, phase/stage disambiguation, etc. |
-| `tests/backend/` | Backend unit tests (pytest) |
-| `.github/workflows/` | CI: `backend-tests.yml` (lint/type-check/docstring-check/pytest for `backend/`) and `hf-space-checks.yml` (the same checks for `hf_space/`) run here; the deploy-on-push workflows for the backend/infra and the HF Space live in `.github/workflows.disabled/` until you stand up a challenge |
+| `tests/` | Unit tests (pytest) for `backend/`, `hf_space/` and `scripts/` |
+| `.github/workflows/` | CI: `backend-tests.yml` (lint/type-check/docstring-check/pytest for `backend/` and `scripts/`) and `hf-space-checks.yml` (the same checks for `hf_space/`) run here; the deploy-on-push workflows for the backend/infra and the HF Space live in `.github/workflows.disabled/` until you stand up a challenge |
 
 ---
 
@@ -46,7 +47,10 @@ The quickest way to see every fill-in point at once is the [**Todo Tree**](https
 - [opentofu/README.md](opentofu/README.md) — AWS infrastructure: resources created, IAM policy grants, setup walkthrough for a new challenge deployment, teardown
 - [docs/scoring-and-leaderboards.md](docs/scoring-and-leaderboards.md) — How a regression or classification submission turns into bootstrapped per-endpoint metrics, a macro-averaged ("MA") score, and each track's per-endpoint + overall leaderboards
 - [docs/structure-scoring.md](docs/structure-scoring.md) — How a structure submission's PDB files turn into per-compound pose-quality scores (LDDT-PLI/BiSyRMSD/LDDT-LP) and the structure leaderboard
-- [docs/phases-and-stages.md](docs/phases-and-stages.md) — Disambiguates the three unrelated "phase"/"stage" concepts in this codebase (compound-set phase, leaderboard stage, HF Space `CURRENT_PHASE`)
+- [docs/phases-and-stages.md](docs/phases-and-stages.md) — Compound sets (`live`/`hidden`/`all`), leaderboard stages, and the HF Space's `CURRENT_PHASE`, and how they relate
+- [docs/bans.md](docs/bans.md) — Banning participants: the ban list, `scripts/manage_bans.py`, and how bans relate to removing entries
+- [docs/removing-entries.md](docs/removing-entries.md) — Taking entries off the leaderboard (`scripts/quarantine_submissions.py`), clearing the bucket after testing, and the delete protection
+- [scripts/README.md](scripts/README.md) — The organiser scripts: the interim and final leaderboard notebooks, quarantine and bans
 
 ---
 
@@ -57,14 +61,14 @@ The quickest way to see every fill-in point at once is the [**Todo Tree**](https
 conda env create -f environment.yml
 conda activate blind-challenge-template
 
-# Run backend tests
-pytest tests/backend/
+# Run the backend and scripts tests
+pytest tests/backend/ tests/scripts/
 
 # Validate a submission file locally
 python -m backend.cli --regression-predictions path/to/predictions.parquet
 ```
 
-See [backend/README.md](backend/README.md) for validation rules, scoring behavior, and the full CLI reference.
+See [backend/README.md](backend/README.md) for validation rules, scoring behavior, and the full CLI reference. The Space has its own requirements and tests; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -96,7 +100,7 @@ Push to hf_testing
      repo variable  [uses HF_TOKEN; job skipped if the variable is unset]
 ```
 
-Two workflows are active in the template itself, both on every push and PR to `main` (and `hf_testing`), plus manual dispatch: `.github/workflows/backend-tests.yml` (ruff/mypy/pydoclint, then pytest) on changes to `backend/`, `tests/`, `environment.yml`, `pytest.ini`, or `pyproject.toml`; and `.github/workflows/hf-space-checks.yml` (the same ruff/mypy/pydoclint checks, no test suite) on changes to `hf_space/` or `pyproject.toml`.
+Two workflows are active in the template itself, on pushes and PRs to `main` and `hf_testing`, plus manual dispatch: `.github/workflows/backend-tests.yml` (ruff/mypy/pydoclint, then pytest, for `backend/` and `scripts/`) on every push; and `.github/workflows/hf-space-checks.yml` (the same checks and pytest for `hf_space/`) on changes to `hf_space/`, `tests/hf_space/`, `pyproject.toml` or `pytest.ini`.
 
 ### Required GitHub Actions Secrets (`.github/workflows/deploy.yml`, `deploy-hf-space.yml`)
 

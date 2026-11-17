@@ -32,9 +32,12 @@ dependencies:
   - pytest=9.1.1
   - pytest-cov=7.1.0
   - pip:
-    - gradio==5.50.0              # conda-forge may lag; install via pip for latest
-    - gradio-leaderboard==0.0.14  # not on conda-forge
+    - gradio[oauth]==6.32.0       # conda-forge may lag; install via pip for latest
+    - uuid-utils==1.2.0           # hf_space submission IDs (UUIDv7); stdlib uuid7 needs Python 3.14
     - pydoclint==0.9.1            # not on conda-forge
+    - rdkit==2026.3.5             # via pip, not conda-forge: the conda-forge build's
+                                  # libboost pin conflicts with openstructure's
+    - posebusters==0.6.5          # structure scoring (as in the Lambda image); needs rdkit
     # Type stubs for mypy, pinned to match the runtime versions above
     - pandas-stubs==2.3.3.260113
     - boto3-stubs[s3,secretsmanager]==1.43.41

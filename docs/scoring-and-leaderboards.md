@@ -8,10 +8,10 @@ scoring call — each mirroring how the structure track is already independent.
 
 <!-- TODO: the endpoint counts below (4 regression, 2 classification) and the
      example endpoint names (ENDPOINT_1 …) assume the template's default config.
-     Update them to match this challenge's REGRESSION_ENDPOINTS /
-     CLASSIFICATION_ENDPOINTS in backend/config.py. -->
+     Update them to match this challenge's REGRESSION_SPEC.endpoints /
+     CLASSIFICATION_SPEC.endpoints in backend/config.py. -->
  They still score against the same shared ground-truth
-dataset (the same compound set, just different columns) via `ACTIVITY_PATHS`.
+dataset (the same compound set, just different columns): both `TrackSpec`s have `dataset="activity"`.
 The structure track itself scores a single endpoint (`LDDT-PLI`/`BiSyRMSD`/`LDDT-LP`)
 and skips the macro-averaging step entirely (stage 2 below), so it goes straight from
 stage 1 into stage 3's pivot (still narrowed to its one endpoint, "structure") with no
@@ -19,8 +19,8 @@ per-endpoint loop, and `create_track_leaderboards` (stage 4) builds it exactly o
 leaderboard instead of one per endpoint. See
 [structure-scoring.md](structure-scoring.md) for how structure's stage 1 actually
 works. See [phases-and-stages.md](phases-and-stages.md) for how the
-"live"/"interim"/"final" stage referenced here relates to the separate compound-set
-"phase" concept and the HF Space's `CURRENT_PHASE`.
+"live"/"interim"/"final" stage referenced here relates to compound sets
+(`live`/`hidden`/`all`) and the HF Space's `CURRENT_PHASE`.
 
 ```mermaid
 flowchart TD
@@ -30,9 +30,9 @@ flowchart TD
         RPRED --> RMERGE["Merge on Molecule_Name"]
         GT --> RMERGE
         RMERGE --> RLOOP["For each of the 4 regression endpoints<br/>(compounds with no ground truth for that<br/>endpoint are excluded before scoring)"]
-        RLOOP --> RMETRICS["ACTIVITY_METRICS:<br/>ST-RAE · MAE · R2 · Spearman_R · Kendall_Tau<br/>(ST-RAE also receives that endpoint's<br/>_conf_high/_conf_low credible-interval bounds)"]
-        RMETRICS --> RBOOT["Bootstrap resample, 1000 iterations<br/>(same sample indices shared across all endpoints<br/>of a given pool size)"]
-        RBOOT --> RRAW[("Raw bootstrap table<br/>4 endpoints x 1000 samples")]
+        RLOOP --> RMETRICS["REGRESSION_SPEC.metrics:<br/>ST-RAE · MAE · R2 · Spearman_R · Kendall_Tau<br/>(ST-RAE also receives that endpoint's<br/>_conf_high/_conf_low credible-interval bounds)"]
+        RMETRICS --> RBOOT["Bootstrap resample, B = BOOTSTRAP_SAMPLES iterations<br/>(same sample indices shared across all endpoints<br/>of a given pool size)"]
+        RBOOT --> RRAW[("Raw bootstrap table<br/>4 endpoints x B samples")]
     end
 
     subgraph S1C["1b · Score a classification submission — score_classification_submission()"]
@@ -40,19 +40,19 @@ flowchart TD
         GT --> CMERGE["Merge on Molecule_Name"]
         CPRED --> CMERGE
         CMERGE --> CLOOP["For each of the 2 classification endpoints<br/>(compounds with no ground truth for that<br/>endpoint are excluded before scoring)"]
-        CLOOP --> CMETRICS["CLASSIFICATION_METRICS:<br/>MCC · Accuracy · Precision · Recall · F1"]
-        CMETRICS --> CBOOT["Bootstrap resample, 1000 iterations"]
-        CBOOT --> CRAW[("Raw bootstrap table<br/>2 endpoints x 1000 samples")]
+        CLOOP --> CMETRICS["CLASSIFICATION_SPEC.metrics:<br/>MCC · Accuracy · Precision · Recall · F1"]
+        CMETRICS --> CBOOT["Bootstrap resample, B = BOOTSTRAP_SAMPLES iterations"]
+        CBOOT --> CRAW[("Raw bootstrap table<br/>2 endpoints x B samples")]
     end
 
     subgraph S2R["2a · Regression track — add_macro_endpoint()"]
         RRAW --> RMA["Macro-average across the 4 endpoints,<br/>per bootstrap sample -&gt; 'MA' pseudo-endpoint"]
-        RMA --> RCOMBINED[("regression bootstrap-results.parquet<br/>5 endpoints x 1000 samples = 5000 rows")]
+        RMA --> RCOMBINED[("regression bootstrap-results.parquet<br/>5 endpoints x B samples (B = 10,000: 50,000 rows)")]
     end
 
     subgraph S2C["2b · Classification track — add_macro_endpoint()"]
         CRAW --> CMA["Macro-average across the 2 endpoints,<br/>per bootstrap sample -&gt; 'MA' pseudo-endpoint"]
-        CMA --> CCOMBINED[("classification bootstrap-results.parquet<br/>3 endpoints x 1000 samples = 3000 rows")]
+        CMA --> CCOMBINED[("classification bootstrap-results.parquet<br/>3 endpoints x B samples (B = 10,000: 30,000 rows)")]
     end
 
     subgraph S3["3 · Average by endpoint, then flatten (once per track)"]
@@ -91,7 +91,7 @@ flowchart TD
   (`lambda_handler_regression.py`/`lambda_handler_classification.py`), and own
   validation schema (`submission_validation.get_regression_schema`/
   `get_classification_schema`) — mirroring the already-independent structure track.
-  Both still score against the same shared ground truth (`ACTIVITY_PATHS`,
+  Both still score against the same shared ground truth (the `activity` dataset,
   `activity-dataset.parquet`/`activity-identifiers.parquet`) since they cover the same
   underlying compound set, just different columns. One valid submission produces
   exactly one manifest row, under its own track.
@@ -99,8 +99,8 @@ flowchart TD
   endpoint.** `score_activity_predictions(predictions, ground_truth, endpoints)` is
   called once per track with that track's own `endpoints` list (so bootstrap sample
   indices are shared across endpoints wherever pool sizes match — see below), and
-  picks `ACTIVITY_METRICS` (ST-RAE/MAE/R2/Spearman_R/Kendall_Tau) for a regression
-  endpoint or `CLASSIFICATION_METRICS` (MCC/Accuracy/Precision/Recall/F1) for a
+  picks `REGRESSION_SPEC.metrics` (ST-RAE/MAE/R2/Spearman_R/Kendall_Tau) for a regression
+  endpoint or `CLASSIFICATION_SPEC.metrics` (MCC/Accuracy/Precision/Recall/F1) for a
   classification endpoint via `_metrics_for_endpoint`.
 - **`ST-RAE` (soft-thresholded RAE) needs each regression endpoint's credible-interval
   bounds.** Ground truth carries `f"{endpoint}{REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX}"`/
@@ -112,7 +112,7 @@ flowchart TD
   A prediction inside `[y_true_lower, y_true_upper]` scores zero error for that
   compound; outside the band, error is the distance to the nearest bound rather than
   to the raw point estimate. Classification endpoints have no such columns — `None` is
-  passed through, which is harmless since no `CLASSIFICATION_METRICS` function needs
+  passed through, which is harmless since no `CLASSIFICATION_SPEC.metrics` function needs
   them.
 - **`add_macro_endpoint` appends the macro step.** It appends that track's own "MA"
   pseudo-endpoint via `compute_macro_bootstrap_results` when the track has more than
@@ -128,8 +128,8 @@ flowchart TD
   `score_activity_predictions` raises `ValueError` too as a second line of defence.
 - **Bootstrap indices are shared across endpoints wherever their pool sizes match.**
   `bootstrap_sampling()` is cached by `(dataset_size, n_samples)`, so every endpoint
-  with the same number of ground-truth-eligible compounds reuses the exact same 1000
-  resamples for a given submission — this is what makes it valid to combine those
+  with the same number of ground-truth-eligible compounds reuses the exact same
+  `BOOTSTRAP_SAMPLES` resamples for a given submission — this is what makes it valid to combine those
   endpoints sample-by-sample when macro-averaging.
 - **The "MA" pseudo-endpoint is not a real endpoint** — it's a derived row computed
   *within* each bootstrap sample from that track's other endpoints, then appended so
@@ -137,20 +137,12 @@ flowchart TD
   endpoint.
 - **Every metric uses a plain arithmetic mean across endpoints**, including the two
   bounded correlation coefficients (`Spearman_R`, `Kendall_Tau`).
-  `Spearman_R` previously used a Fisher z-transform (`arctanh` → mean(z) → `tanh`) —
-  the standard variance-stabilising treatment for combining several noisy *estimates
-  of the same underlying correlation* (e.g. meta-analysis, or one endpoint's Spearman
-  averaged across repeated resamples of the same data). Macro-averaging here instead
-  combines Spearman scores from *different* endpoints — unrelated true correlations,
-  not repeated estimates of one — so that justification
-  doesn't hold. Worse, `arctanh` blows up near ±1 (`arctanh(1 - 1e-7) ≈ 8.4` vs.
-  `arctanh(0) = 0`), so a submission with a near-perfect Spearman on just one or two
-  endpoints and ~0 on the rest could macro-average to ~0.99 instead of the
-  naively-expected ~0.3 — a couple of easy/lucky endpoints dominating the whole score
-  rather than it reflecting balanced performance across the panel. `Kendall_Tau` was
-  never a candidate for this transform in the first place: Fisher's z is derived for
-  Pearson's r (and commonly extended to Spearman's rho), but that derivation doesn't
-  carry over to Kendall's tau, which has a different asymptotic sampling distribution.
+  Not a Fisher z-transform (`arctanh` → mean(z) → `tanh`): that suits combining
+  several noisy estimates of the *same* correlation, but here the endpoints are
+  different correlations, and `arctanh` blows up near ±1 (`arctanh(1 - 1e-7) ≈ 8.4`
+  vs. `arctanh(0) = 0`). A near-perfect Spearman on one or two endpoints and ~0 on the
+  rest would macro-average to ~0.99 instead of ~0.3, so a couple of easy endpoints
+  would dominate the score. (Fisher's z doesn't apply to Kendall's tau at all.)
 - **Endpoint-prefixed, then narrowed back down.** Each track's `averaged-results.parquet`
   stores *every one of that track's* endpoint stats in one wide row (e.g.
   `ENDPOINT_1_ST-RAE_mean`, `MA_ST-RAE_mean` for regression;
@@ -170,15 +162,51 @@ flowchart TD
   individual per-endpoint leaderboards of a multi-endpoint track.** Pairwise bootstrap
   comparisons are expensive, so this keeps the auto-generated live leaderboard cheap;
   see `create_track_leaderboards` in `backend/aws_leaderboards.py`.
+- **Pairwise p-values use the `(r + 1) / (B + 1)` form** (`EntryComparison` in
+  `backend/leaderboard.py`). Two entries' bootstrap results are paired on their shared
+  `Sample` index; `r` is the smaller of the number of samples where one entry beats or
+  ties the other and the number where it loses or ties (ties count for both sides, the
+  conservative convention), and the two-sided p-value is `2 * (r + 1) / (B + 1)`,
+  capped at 1. It is never exactly 0: with
+  `BOOTSTRAP_SAMPLES = 10000` the smallest possible value is about 0.0002 (why 10,000:
+  see the comment in `backend/config.py`). P-values are
+  then compared against Benjamini-Hochberg-adjusted thresholds. Because the pairing is
+  on the sample index, `BOOTSTRAP_SAMPLES` must not change while a challenge runs.
 - **Leaderboard generation is one function regardless of track or endpoint count.**
   `create_track_leaderboards` builds one leaderboard per `TrackPaths.endpoints` entry,
   plus an additional `MA` master when there's more than one endpoint (a
   single-endpoint track like structure just gets that one leaderboard, which also
   doubles as the "master" for significance-testing purposes). A track with *zero*
-  endpoints (`CLASSIFICATION_ENDPOINTS = []`, e.g. before that track launches, or if
+  endpoints (`CLASSIFICATION_SPEC.endpoints = []`, e.g. before that track launches, or if
   it's ever pulled) returns `{}` immediately rather than attempting to build anything
   — `lambda_handler_leaderboard.py`'s `_TRACKS` dict also skips registering a
   zero-endpoint track in the first place, so this is belt-and-suspenders.
+
+## How the Space shows a leaderboard
+
+The Space reads each leaderboard CSV from S3 and shows it as a table:
+
+- **Scores** show as "mean ± std" but sort by the mean, numerically. Sorting is
+  in each column header's ⋮ menu. Headers show ↑/↓ for which direction is better
+  (`METRIC_HIGHER_IS_BETTER`, and the spec's `higher_is_better` for the primary
+  metric), and the primary metric's column is bold.
+- **Shading** alternates between significance tiers on interim and final
+  leaderboards, and marks the top three on the live leaderboard.
+- **Precision** is set per stage in `hf_space/config.py`: `LEADERBOARD_SIG_FIGS`
+  (2 significant figures on the live leaderboard, 3 on interim and final). On
+  `ROUNDED_STAGES` (live) the sort values and the download are rounded too, so the
+  browser never receives full-precision scores while the challenge is running.
+- **Usernames** sort by the name shown, ignoring case. An anonymous entry shows
+  its alias (searchable by the alias only) and isn't linked to the user's profile.
+  Names longer than 24 characters are shortened, with the full name on hover.
+- A track with several endpoints has an **endpoint picker** choosing between
+  the macro-averaged leaderboard and each endpoint's own.
+- Visitors can **search** by name, **filter** on proprietary data and open code,
+  and **show or hide columns**. The significance tiers column shows where a
+  leaderboard has one; other columns the Space doesn't list itself start hidden. A live refresh keeps these choices.
+- **Download CSV** gives each score's mean and std in separate columns, so the
+  file can be sorted by either in a spreadsheet: full precision on interim and
+  final, rounded on live.
 
 ## Where this lives in the code
 
@@ -189,4 +217,5 @@ flowchart TD
 | 3. Average by endpoint + flatten (once per track) | `average_bootstrap_results_by_endpoint`, `pivot_endpoint_results_wide` | `backend/evaluate_predictions.py` |
 | Per-track pipeline: fetch, validate, score, save, manifest | `process_new_regression_submission`, `process_new_classification_submission`, `score_regression_submission`, `score_classification_submission` | `backend/aws_submission_processing.py` |
 | 4. Narrow to one endpoint + rank | `create_track_leaderboards`, `_narrow_averaged_results_to_endpoint` | `backend/aws_leaderboards.py` |
-| Ranking, CLD significance | `FinalLeaderboard`, `EntryComparison` | `backend/leaderboard.py` |
+| Ranking, significance tiers / CLD | `FinalLeaderboard`, `EntryComparison` | `backend/leaderboard.py` |
+| Showing it in the Space | `load_leaderboard`; `LeaderboardTable`, `render_leaderboard_table` | `hf_space/leaderboards.py`; `hf_space/leaderboard_table.py` |

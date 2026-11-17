@@ -14,37 +14,17 @@ from .aws_leaderboards import (
 from .config import (
     CLASSIFICATION_PATHS,
     REGRESSION_PATHS,
-    SORT_CLASSIFICATION_LEADERBOARD_BY,
-    SORT_REGRESSION_LEADERBOARD_BY,
-    SORT_STRUCTURE_LEADERBOARD_BY,
     STRUCTURE_PATHS,
     TrackPaths,
 )
 
-# Per-track ranking config. ``create_track_leaderboards`` picks the single- vs.
-# multi-endpoint path from ``TrackPaths.endpoints``; everything else needed to build
-# and save a track's leaderboard(s) lives here. The "classification" entry is built
-# conditionally — a track with no endpoints (CLASSIFICATION_ENDPOINTS = [], e.g.
-# before that track launches, or if it's ever pulled) shouldn't even attempt
-# leaderboard generation; create_track_leaderboards also guards this itself, so this
-# is belt-and-suspenders and avoids reporting a spurious "failed to generate" for a
-# track that was never meant to exist yet.
-_TRACKS: dict[str, tuple[TrackPaths, str, bool, list[str]]] = {
-    "regression": (REGRESSION_PATHS, SORT_REGRESSION_LEADERBOARD_BY, True, []),
-    "structure": (
-        STRUCTURE_PATHS,
-        SORT_STRUCTURE_LEADERBOARD_BY,
-        False,
-        ["coverage_mean"],
-    ),
-}
-if CLASSIFICATION_PATHS.endpoints:
-    _TRACKS["classification"] = (
-        CLASSIFICATION_PATHS,
-        SORT_CLASSIFICATION_LEADERBOARD_BY,
-        False,
-        [],
-    )
+# Tracks with live leaderboards. A track with no endpoints (e.g. no classification
+# track) is skipped.
+_TRACKS: list[TrackPaths] = [
+    paths
+    for paths in (REGRESSION_PATHS, CLASSIFICATION_PATHS, STRUCTURE_PATHS)
+    if paths.endpoints
+]
 
 
 def handler(event, context):
@@ -56,9 +36,10 @@ def handler(event, context):
 
     # Isolated per track: a failure generating one track's leaderboard(s) should not
     # prevent the other track from generating.
-    for track_name, track_config in _TRACKS.items():
+    for track_paths in _TRACKS:
+        track_name = track_paths.track
         try:
-            results[track_name] = _generate_track_leaderboards(*track_config)
+            results[track_name] = _generate_track_leaderboards(track_paths)
         except Exception:
             logger.exception("Failed to generate {} leaderboards", track_name)
             results[track_name] = {
@@ -68,12 +49,7 @@ def handler(event, context):
     return results
 
 
-def _generate_track_leaderboards(
-    track_paths: TrackPaths,
-    primary_metric: str,
-    metric_sort_ascending: bool,
-    additional_columns: list[str],
-) -> dict:
+def _generate_track_leaderboards(track_paths: TrackPaths) -> dict:
     """Generate and conditionally save every live leaderboard variant for a track.
 
     A single-endpoint track (e.g. structure) produces one variant; a multi-endpoint
@@ -83,14 +59,7 @@ def _generate_track_leaderboards(
     Parameters
     ----------
     track_paths : TrackPaths
-        This track's ``TrackPaths`` — selects where the leaderboard is read
-        from/written to.
-    primary_metric : str
-        The metric each leaderboard variant is ranked by.
-    metric_sort_ascending : bool
-        Whether lower or higher values of ``primary_metric`` rank first.
-    additional_columns : list[str]
-        Extra bare columns to copy onto every leaderboard variant.
+        The track to build and save.
 
     Returns
     -------
@@ -98,13 +67,7 @@ def _generate_track_leaderboards(
         Status message per leaderboard variant.
 
     """
-    leaderboards = create_track_leaderboards(
-        track_paths=track_paths,
-        stage="live",
-        primary_metric=primary_metric,
-        metric_sort_ascending=metric_sort_ascending,
-        additional_columns=additional_columns,
-    )
+    leaderboards = create_track_leaderboards(track_paths=track_paths, stage="live")
 
     results = {}
     for endpoint_slug, leaderboard in leaderboards.items():

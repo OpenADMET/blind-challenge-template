@@ -5,17 +5,12 @@ import pandas as pd
 import pytest
 
 from backend.config import (
-    ACTIVITY_ENDPOINTS,
-    ACTIVITY_METRICS,
-    BOOTSTRAP_SAMPLES,
-    CLASSIFICATION_ENDPOINTS,
-    CLASSIFICATION_METRICS,
+    CLASSIFICATION_SPEC,
     MACRO_ENDPOINT_LABEL,
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
     REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX,
-    REGRESSION_ENDPOINTS,
-    STRUCTURE_ENDPOINTS,
-    STRUCTURE_METRICS,
+    REGRESSION_SPEC,
+    STRUCTURE_SPEC,
 )
 from backend.evaluate_predictions import (
     _metric_needs_credible_interval_bounds,
@@ -29,13 +24,18 @@ from backend.evaluate_predictions import (
     score_activity_predictions,
 )
 
+from backend_test_settings import TEST_BOOTSTRAP_SAMPLES
+
+# Every endpoint scored against the shared activity ground truth.
+ACTIVITY_ENDPOINTS = REGRESSION_SPEC.endpoints + CLASSIFICATION_SPEC.endpoints
+
 
 def test_metrics_for_endpoint_dispatch():
-    """Classification endpoints get CLASSIFICATION_METRICS, others get ACTIVITY_METRICS."""
-    for endpoint in REGRESSION_ENDPOINTS:
-        assert _metrics_for_endpoint(endpoint) is ACTIVITY_METRICS
-    for endpoint in CLASSIFICATION_ENDPOINTS:
-        assert _metrics_for_endpoint(endpoint) is CLASSIFICATION_METRICS
+    """Classification endpoints get CLASSIFICATION_SPEC.metric_functions, others get REGRESSION_SPEC.metric_functions."""
+    for endpoint in REGRESSION_SPEC.endpoints:
+        assert _metrics_for_endpoint(endpoint) == REGRESSION_SPEC.metric_functions
+    for endpoint in CLASSIFICATION_SPEC.endpoints:
+        assert _metrics_for_endpoint(endpoint) == CLASSIFICATION_SPEC.metric_functions
 
 
 def test_score_activity_predictions(
@@ -44,8 +44,7 @@ def test_score_activity_predictions(
     """Test scoring of activity predictions — no macro pseudo-endpoint included.
 
     score_activity_predictions scores whichever endpoints it's given, using each
-    endpoint's own metric list — the macro "MA" row is no longer computed here (see
-    add_macro_endpoint). Passing the full combined ACTIVITY_ENDPOINTS list here
+    endpoint's own metric list; the macro "MA" row comes from add_macro_endpoint. Passing the full combined ACTIVITY_ENDPOINTS list here
     exercises both metric-dispatch branches in one call; a real regression or
     classification submission would instead pass only its own track's endpoints.
     """
@@ -55,7 +54,7 @@ def test_score_activity_predictions(
         endpoints=ACTIVITY_ENDPOINTS,
     )
     assert not scored_df.empty
-    assert scored_df.shape[0] == BOOTSTRAP_SAMPLES * len(ACTIVITY_ENDPOINTS)
+    assert scored_df.shape[0] == TEST_BOOTSTRAP_SAMPLES * len(ACTIVITY_ENDPOINTS)
     assert set(scored_df["Endpoint"]) == set(ACTIVITY_ENDPOINTS)
     assert MACRO_ENDPOINT_LABEL not in set(scored_df["Endpoint"])
 
@@ -64,19 +63,19 @@ def test_score_activity_predictions(
     # that row's endpoint (add_macro_endpoint is what narrows this away per-track).
     expected_columns = (
         {"Sample", "Endpoint"}
-        | {name for name, _ in ACTIVITY_METRICS}
-        | {name for name, _ in CLASSIFICATION_METRICS}
+        | {name for name, _ in REGRESSION_SPEC.metric_functions}
+        | {name for name, _ in CLASSIFICATION_SPEC.metric_functions}
     )
     assert set(scored_df.columns) == expected_columns
 
-    regression_rows = scored_df[scored_df["Endpoint"].isin(REGRESSION_ENDPOINTS)]
+    regression_rows = scored_df[scored_df["Endpoint"].isin(REGRESSION_SPEC.endpoints)]
     classification_rows = scored_df[
-        scored_df["Endpoint"].isin(CLASSIFICATION_ENDPOINTS)
+        scored_df["Endpoint"].isin(CLASSIFICATION_SPEC.endpoints)
     ]
-    for name, _ in ACTIVITY_METRICS:
+    for name, _ in REGRESSION_SPEC.metric_functions:
         assert regression_rows[name].notna().all()
         assert classification_rows[name].isna().all()
-    for name, _ in CLASSIFICATION_METRICS:
+    for name, _ in CLASSIFICATION_SPEC.metric_functions:
         assert classification_rows[name].notna().all()
         assert regression_rows[name].isna().all()
 
@@ -90,7 +89,7 @@ def test_score_activity_predictions_excludes_missing_classification_ground_truth
     truth has a couple of genuinely missing labels and lands as object dtype after
     merge, which np.isnan can't handle.
     """
-    endpoint = CLASSIFICATION_ENDPOINTS[0]
+    endpoint = CLASSIFICATION_SPEC.endpoints[0]
     assert example_activity_ground_truth_data[endpoint].isna().any(), (
         "fixture must have >=1 missing classification label to exercise this path"
     )
@@ -103,7 +102,7 @@ def test_score_activity_predictions_excludes_missing_classification_ground_truth
     # bootstrap_metrics always produces one row per bootstrap iteration regardless of
     # pool size — the missing-label compound(s) are dropped from the resampling pool
     # before bootstrapping, not from the row count.
-    assert len(endpoint_samples) == BOOTSTRAP_SAMPLES
+    assert len(endpoint_samples) == TEST_BOOTSTRAP_SAMPLES
 
 
 def test_bootstrap_metrics_regression(
@@ -111,11 +110,11 @@ def test_bootstrap_metrics_regression(
 ):
     """Test bootstrapping of metrics for a regression endpoint.
 
-    ACTIVITY_METRICS includes ST-RAE, which needs the per-compound credible-interval
+    REGRESSION_SPEC.metric_functions includes ST-RAE, which needs the per-compound credible-interval
     bounds (y_true_upper/y_true_lower) — omitting them would make bootstrap_metrics
     raise (see test_bootstrap_metrics_regression_requires_credible_interval_bounds).
     """
-    endpoint = REGRESSION_ENDPOINTS[0]
+    endpoint = REGRESSION_SPEC.endpoints[0]
     # A couple of compounds genuinely lack ground truth for this endpoint —
     # bootstrap_metrics itself doesn't filter (score_activity_predictions does that
     # before calling it), so mirror that exclusion here.
@@ -126,8 +125,8 @@ def test_bootstrap_metrics_regression(
         example_activity_predictions_data.loc[has_ground_truth, endpoint].to_numpy(),
         example_activity_ground_truth_data.loc[has_ground_truth, endpoint].to_numpy(),
         endpoint,
-        n_bootstrap_samples=BOOTSTRAP_SAMPLES,
-        metrics=ACTIVITY_METRICS,
+        n_bootstrap_samples=TEST_BOOTSTRAP_SAMPLES,
+        metrics=REGRESSION_SPEC.metric_functions,
         y_true_upper=example_activity_ground_truth_data.loc[
             has_ground_truth, upper_col
         ].to_numpy(),
@@ -137,11 +136,11 @@ def test_bootstrap_metrics_regression(
     )
     assert not bootstrap_df.empty
     assert bootstrap_df.shape == (
-        BOOTSTRAP_SAMPLES,
-        len(ACTIVITY_METRICS) + 2,  # +2 for Endpoint and Sample columns
+        TEST_BOOTSTRAP_SAMPLES,
+        len(REGRESSION_SPEC.metric_functions) + 2,  # +2 for Endpoint and Sample columns
     )
     assert set(bootstrap_df.columns) == set(
-        [met[0] for met in ACTIVITY_METRICS] + ["Endpoint", "Sample"]
+        [met[0] for met in REGRESSION_SPEC.metric_functions] + ["Endpoint", "Sample"]
     )
 
 
@@ -149,7 +148,7 @@ def test_bootstrap_metrics_regression_requires_credible_interval_bounds(
     example_activity_predictions_data, example_activity_ground_truth_data
 ):
     """ST-RAE needs credible-interval bounds — omitting them raises, not silently 0s."""
-    endpoint = REGRESSION_ENDPOINTS[0]
+    endpoint = REGRESSION_SPEC.endpoints[0]
     has_ground_truth = example_activity_ground_truth_data[endpoint].notna()
     with pytest.raises(RuntimeError, match="ST-RAE"):
         bootstrap_metrics(
@@ -161,13 +160,13 @@ def test_bootstrap_metrics_regression_requires_credible_interval_bounds(
             ].to_numpy(),
             endpoint,
             n_bootstrap_samples=1,
-            metrics=ACTIVITY_METRICS,
+            metrics=REGRESSION_SPEC.metric_functions,
         )
 
 
 def test_metric_needs_credible_interval_bounds_dispatch():
     """Only metrics with y_true_upper/y_true_lower params are flagged as needing bounds."""
-    metrics_by_name = dict(ACTIVITY_METRICS)
+    metrics_by_name = dict(REGRESSION_SPEC.metric_functions)
     assert _metric_needs_credible_interval_bounds(metrics_by_name["ST-RAE"])
     assert not _metric_needs_credible_interval_bounds(metrics_by_name["MAE"])
     assert not _metric_needs_credible_interval_bounds(metrics_by_name["R2"])
@@ -179,7 +178,7 @@ def test_bootstrap_metrics_constant_prediction_falls_back_instead_of_raising():
     should fall back to 0.0 ("no correlation") rather than raising.
 
     y_true_upper/y_true_lower are supplied as a wide dummy band purely so ST-RAE
-    (also in ACTIVITY_METRICS) can run without hitting the separate
+    (also in REGRESSION_SPEC.metric_functions) can run without hitting the separate
     credible-interval-bounds-required error this test isn't about.
     """
     rng = np.random.default_rng(0)
@@ -190,7 +189,7 @@ def test_bootstrap_metrics_constant_prediction_falls_back_instead_of_raising():
         y_true,
         "some_endpoint",
         n_bootstrap_samples=10,
-        metrics=ACTIVITY_METRICS,
+        metrics=REGRESSION_SPEC.metric_functions,
         y_true_upper=y_true + 1.0,
         y_true_lower=y_true - 1.0,
     )
@@ -202,7 +201,7 @@ def test_bootstrap_metrics_classification(
     example_activity_predictions_data, example_activity_ground_truth_data
 ):
     """Test bootstrapping of metrics for a classification endpoint."""
-    endpoint = CLASSIFICATION_ENDPOINTS[0]
+    endpoint = CLASSIFICATION_SPEC.endpoints[0]
     has_ground_truth = example_activity_ground_truth_data[endpoint].notna()
     y_true = (
         example_activity_ground_truth_data.loc[has_ground_truth, endpoint]
@@ -218,16 +217,18 @@ def test_bootstrap_metrics_classification(
         y_pred,
         y_true,
         endpoint,
-        n_bootstrap_samples=BOOTSTRAP_SAMPLES,
-        metrics=CLASSIFICATION_METRICS,
+        n_bootstrap_samples=TEST_BOOTSTRAP_SAMPLES,
+        metrics=CLASSIFICATION_SPEC.metric_functions,
     )
     assert not bootstrap_df.empty
     assert bootstrap_df.shape == (
-        BOOTSTRAP_SAMPLES,
-        len(CLASSIFICATION_METRICS) + 2,  # +2 for Endpoint and Sample columns
+        TEST_BOOTSTRAP_SAMPLES,
+        len(CLASSIFICATION_SPEC.metric_functions)
+        + 2,  # +2 for Endpoint and Sample columns
     )
     assert set(bootstrap_df.columns) == set(
-        [met[0] for met in CLASSIFICATION_METRICS] + ["Endpoint", "Sample"]
+        [met[0] for met in CLASSIFICATION_SPEC.metric_functions]
+        + ["Endpoint", "Sample"]
     )
 
 
@@ -237,15 +238,17 @@ def test_add_macro_endpoint_regression(example_regression_bootstrap_scores):
         example_regression_bootstrap_scores["Endpoint"] != MACRO_ENDPOINT_LABEL
     ]
     result = add_macro_endpoint(
-        raw_only, endpoints=REGRESSION_ENDPOINTS, metrics=ACTIVITY_METRICS
+        raw_only,
+        endpoints=REGRESSION_SPEC.endpoints,
+        metrics=REGRESSION_SPEC.metric_functions,
     )
     assert set(result.columns) == {"Sample", "Endpoint"} | {
-        name for name, _ in ACTIVITY_METRICS
+        name for name, _ in REGRESSION_SPEC.metric_functions
     }
-    assert set(result["Endpoint"]) == set(REGRESSION_ENDPOINTS) | {
+    assert set(result["Endpoint"]) == set(REGRESSION_SPEC.endpoints) | {
         MACRO_ENDPOINT_LABEL
     }
-    assert (result["Endpoint"] == MACRO_ENDPOINT_LABEL).sum() == BOOTSTRAP_SAMPLES
+    assert (result["Endpoint"] == MACRO_ENDPOINT_LABEL).sum() == TEST_BOOTSTRAP_SAMPLES
 
 
 def test_add_macro_endpoint_classification(example_classification_bootstrap_scores):
@@ -254,15 +257,17 @@ def test_add_macro_endpoint_classification(example_classification_bootstrap_scor
         example_classification_bootstrap_scores["Endpoint"] != MACRO_ENDPOINT_LABEL
     ]
     result = add_macro_endpoint(
-        raw_only, endpoints=CLASSIFICATION_ENDPOINTS, metrics=CLASSIFICATION_METRICS
+        raw_only,
+        endpoints=CLASSIFICATION_SPEC.endpoints,
+        metrics=CLASSIFICATION_SPEC.metric_functions,
     )
     assert set(result.columns) == {"Sample", "Endpoint"} | {
-        name for name, _ in CLASSIFICATION_METRICS
+        name for name, _ in CLASSIFICATION_SPEC.metric_functions
     }
-    assert set(result["Endpoint"]) == set(CLASSIFICATION_ENDPOINTS) | {
+    assert set(result["Endpoint"]) == set(CLASSIFICATION_SPEC.endpoints) | {
         MACRO_ENDPOINT_LABEL
     }
-    assert (result["Endpoint"] == MACRO_ENDPOINT_LABEL).sum() == BOOTSTRAP_SAMPLES
+    assert (result["Endpoint"] == MACRO_ENDPOINT_LABEL).sum() == TEST_BOOTSTRAP_SAMPLES
 
 
 def test_add_macro_endpoint_drops_other_track_columns():
@@ -290,8 +295,8 @@ def test_average_bootstrap_results_by_endpoint(example_regression_bootstrap_scor
     assert not averaged_df.empty
     # +1 for the "MA" pseudo-endpoint row alongside the real endpoints.
     assert averaged_df.shape == (
-        len(REGRESSION_ENDPOINTS) + 1,
-        len(ACTIVITY_METRICS) * 2,
+        len(REGRESSION_SPEC.endpoints) + 1,
+        len(REGRESSION_SPEC.metric_functions) * 2,
     )  # *2 for mean and std columns
     assert MACRO_ENDPOINT_LABEL in averaged_df.index
 
@@ -312,12 +317,15 @@ def test_compute_macro_bootstrap_results_matches_fixture(
     ].sort_values("Sample")
 
     recomputed_macro = compute_macro_bootstrap_results(
-        raw_only, metrics=ACTIVITY_METRICS
+        raw_only, metrics=REGRESSION_SPEC.metric_functions
     ).sort_values("Sample")
 
-    assert recomputed_macro.shape == (BOOTSTRAP_SAMPLES, len(ACTIVITY_METRICS) + 2)
+    assert recomputed_macro.shape == (
+        TEST_BOOTSTRAP_SAMPLES,
+        len(REGRESSION_SPEC.metric_functions) + 2,
+    )
     assert (recomputed_macro["Endpoint"] == MACRO_ENDPOINT_LABEL).all()
-    for metric_name, _ in ACTIVITY_METRICS:
+    for metric_name, _ in REGRESSION_SPEC.metric_functions:
         np.testing.assert_allclose(
             recomputed_macro[metric_name].to_numpy(),
             fixture_macro[metric_name].to_numpy(),
@@ -326,15 +334,10 @@ def test_compute_macro_bootstrap_results_matches_fixture(
 
 
 def test_compute_macro_bootstrap_results_metric_semantics():
-    """Check every metric — including Spearman_R — is a plain arithmetic mean.
+    """Every metric, Spearman_R included, is a plain arithmetic mean across endpoints.
 
-    Spearman_R previously used a Fisher z-transform (arctanh/tanh), the standard
-    treatment for combining several noisy estimates of the *same* correlation. That
-    doesn't apply to macro-averaging across different endpoints (unrelated true
-    correlations): arctanh blows up near +/-1, so a submission with a
-    near-perfect Spearman on one endpoint and ~0 on the rest could macro-average to
-    ~0.99 instead of the expected ~0.33 — a couple of easy/lucky endpoints dominating
-    the score. So Spearman_R now gets a plain mean like every other metric.
+    A Fisher z-transform would let a near-perfect Spearman on one endpoint dominate:
+    ~0.99 instead of the expected ~0.33 here.
     """
     raw = pd.DataFrame(
         {
@@ -347,9 +350,9 @@ def test_compute_macro_bootstrap_results_metric_semantics():
             "Kendall_Tau": [0.9, 0.9, -0.9, 0.5, 0.5, 0.5],
         }
     )
-    macro = compute_macro_bootstrap_results(raw, metrics=ACTIVITY_METRICS).set_index(
-        "Sample"
-    )
+    macro = compute_macro_bootstrap_results(
+        raw, metrics=REGRESSION_SPEC.metric_functions
+    ).set_index("Sample")
 
     # ST-RAE, MAE, R2, Kendall_Tau, Spearman_R: all plain arithmetic mean.
     assert macro.loc[0, "MAE"] == pytest.approx((1.0 + 2.0 + 3.0) / 3)
@@ -375,19 +378,28 @@ def test_pivot_endpoint_results_wide(example_regression_bootstrap_scores):
     assert "ST-RAE_mean" not in wide.columns
 
     # Real endpoints: prefixed with the endpoint name.
-    for endpoint in REGRESSION_ENDPOINTS:
+    for endpoint in REGRESSION_SPEC.endpoints:
         assert f"{endpoint}_ST-RAE_mean" in wide.columns
         assert f"{endpoint}_ST-RAE_std" in wide.columns
 
-    assert wide.shape[1] == (len(REGRESSION_ENDPOINTS) + 1) * len(ACTIVITY_METRICS) * 2
+    assert (
+        wide.shape[1]
+        == (len(REGRESSION_SPEC.endpoints) + 1)
+        * len(REGRESSION_SPEC.metric_functions)
+        * 2
+    )
 
 
 def test_bootstrap_structure_metrics_uses_configured_endpoint_label():
-    """Structure bootstrap rows carry STRUCTURE_ENDPOINTS[0], so the wide averaged
+    """Structure bootstrap rows carry STRUCTURE_SPEC.endpoints[0], so the wide averaged
     results are prefixed with the same label the leaderboard narrows on (#25)."""
-    per_compound = pd.DataFrame({m: np.linspace(0, 1, 10) for m in STRUCTURE_METRICS})
+    per_compound = pd.DataFrame(
+        {m: np.linspace(0, 1, 10) for m in STRUCTURE_SPEC.metrics}
+    )
     bootstrap_df = bootstrap_structure_metrics(per_compound, 5)
-    assert set(bootstrap_df["Endpoint"]) == {STRUCTURE_ENDPOINTS[0]}
+    assert set(bootstrap_df["Endpoint"]) == {STRUCTURE_SPEC.endpoints[0]}
 
-    wide = pivot_endpoint_results_wide(average_bootstrap_results_by_endpoint(bootstrap_df))
-    assert all(c.startswith(f"{STRUCTURE_ENDPOINTS[0]}_") for c in wide.columns)
+    wide = pivot_endpoint_results_wide(
+        average_bootstrap_results_by_endpoint(bootstrap_df)
+    )
+    assert all(c.startswith(f"{STRUCTURE_SPEC.endpoints[0]}_") for c in wide.columns)

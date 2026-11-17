@@ -1,10 +1,8 @@
 """Utility functions for the blind challenge."""
 
 import ipaddress
-import re
 import socket
 import time
-from datetime import UTC, datetime
 from functools import lru_cache
 from urllib.parse import urljoin, urlparse
 
@@ -13,50 +11,12 @@ import pandas as pd
 import requests
 from loguru import logger
 
-from .config import FINAL_LEADERBOARD_DEADLINE, INTERIM_LEADERBOARD_DEADLINE
+from .config import (
+    BOOTSTRAP_SAMPLES,
+)
 
 BOOTSTRAP_SEED = 0
 _MAX_REDIRECTS = 5
-
-
-def current_phase(current_time: datetime) -> int:
-    """Determine the current phase of the challenge based on the current date.
-
-    During phase 1, only the training data is available. During phase 2, analog set 1 is
-    unblinded. After phase 2 (phase 0), all data is unblinded.
-
-    Parameters
-    ----------
-    current_time : datetime
-        The current time to use for determining the phase.
-
-    Returns
-    -------
-    int
-        The current phase of the challenge (1, 2, or 0 if both phases are over).
-
-    """
-    if current_time.tzinfo is None:
-        current_time = current_time.replace(tzinfo=UTC)
-    else:
-        current_time = current_time.astimezone(UTC)
-
-    interim_deadline = datetime.strptime(
-        INTERIM_LEADERBOARD_DEADLINE, "%Y-%m-%dT%H:%M:%SZ"
-    ).replace(tzinfo=UTC)
-    final_deadline = datetime.strptime(
-        FINAL_LEADERBOARD_DEADLINE, "%Y-%m-%dT%H:%M:%SZ"
-    ).replace(tzinfo=UTC)
-
-    if current_time < interim_deadline:
-        phase = 1
-    elif current_time < final_deadline:
-        phase = 2
-    else:
-        phase = 0
-
-    logger.debug("Current time: {}, Current phase: {}", current_time, phase)
-    return phase
 
 
 def clip_and_log_transform(y: np.ndarray) -> np.ndarray:
@@ -79,7 +39,7 @@ def clip_and_log_transform(y: np.ndarray) -> np.ndarray:
 
 @lru_cache(maxsize=3)
 def bootstrap_sampling(
-    original_dataset_size: int, n_bootstrap_repeats: int = 1000
+    original_dataset_size: int, n_bootstrap_repeats: int = BOOTSTRAP_SAMPLES
 ) -> np.ndarray:
     """Generate bootstrap sample indices for a dataset of a given size.
 
@@ -92,7 +52,8 @@ def bootstrap_sampling(
     original_dataset_size : int
         The size of the original dataset.
     n_bootstrap_repeats : int
-        The number of bootstrap samples to generate. Default is 1000.
+        The number of bootstrap samples to generate. Defaults to
+        ``config.BOOTSTRAP_SAMPLES``.
 
     Returns
     -------
@@ -233,24 +194,6 @@ def check_page_exists(
     finally:
         # Sleep after every request to avoid HTTPS error
         time.sleep(delay)
-
-
-def validate_hf_username(username: str) -> bool:
-    """Validate that the Hugging Face username exists by checking the profile page."""
-    # restrict_to_public=False: the target here is always the literal huggingface.co
-    # domain (hardcoded below, or enforced by the regex above), never an
-    # attacker-supplied host, so the SSRF guard in check_page_exists is not needed —
-    # and huggingface.co can legitimately resolve to an internal address when called
-    # from within HF's own infrastructure (split-horizon DNS), which that guard
-    # would otherwise reject.
-    logger.debug("Validating Hugging Face username: {}", username)
-    if re.match(r"^https?://huggingface\.co/([^/]+)/?$", str(username).strip()):
-        return check_page_exists(
-            str(username).strip(), delay=1, max_retries=10, restrict_to_public=False
-        )
-    username = str(username).strip()
-    hf_url = f"https://huggingface.co/{username}"
-    return check_page_exists(hf_url, delay=1, max_retries=10, restrict_to_public=False)
 
 
 def validate_model_details(tag: str | float | None) -> str:

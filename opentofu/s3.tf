@@ -80,3 +80,22 @@ resource "aws_s3_bucket_notification" "main" {
 
   eventbridge = true
 }
+
+# -----------------------------------------------------------------------
+# Participant ban list (#22). Created once with just its header row, so a
+# missing file is always an error (the Space refuses submissions when it can't
+# read the list). Organisers edit it with scripts/manage_bans.py; ignore_changes
+# keeps `tofu apply` from overwriting their bans. The columns must match
+# hf_space/bans.py COLUMNS.
+# -----------------------------------------------------------------------
+
+resource "aws_s3_object" "ban_list" {
+  bucket       = aws_s3_bucket.main.id
+  key          = "admin/banned_users.csv"
+  content      = "username,hf_user_id,reason_code,note,banned_at,banned_by,group,reinstated_at\n"
+  content_type = "text/csv"
+
+  lifecycle {
+    ignore_changes = all
+  }
+}

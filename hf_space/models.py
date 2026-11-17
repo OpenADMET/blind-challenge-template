@@ -1,11 +1,29 @@
 """Pydantic models for blind challenge submission data."""
 
-import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from utils import _safeify_username
+from uuid_utils.compat import uuid7
+
+
+def new_submission_id() -> str:
+    """Return a new submission ID: a UUIDv7, as a string.
+
+    UUIDv7 IDs start with a millisecond timestamp, so they sort by creation time.
+    The ID ends up in S3 keys and manifest filenames, which therefore list in
+    submission order. ``uuid_utils.compat.uuid7`` is used because the standard
+    library only gained ``uuid.uuid7()`` in Python 3.14; it returns a standard
+    ``uuid.UUID``. IDs from before this change are UUIDv4 and remain valid.
+
+    Returns
+    -------
+    str
+        The canonical 36-character string form of the UUID.
+
+    """
+    return str(uuid7())
 
 
 class Submission(BaseModel):
@@ -22,11 +40,18 @@ class Submission(BaseModel):
         Pydantic's "model_" protected-namespace warning, which would otherwise
         fire on fields like ``model_report_link``.
     submission_id : str
-        Auto-generated UUID, used as the S3 key component.
+        Auto-generated UUIDv7 (time-ordered; see ``new_submission_id``), used as
+        the S3 key component.
     submitted_at : datetime
         UTC timestamp of submission.
     username : str
-        HuggingFace username (required, used for deduplication).
+        HuggingFace username, from the logged-in OAuth profile (used for
+        deduplication).
+    hf_user_id : str
+        The account's permanent Hugging Face ID (the OAuth ``sub``), which stays the
+        same if the account is renamed.
+    hf_account_created_at : datetime | None
+        When the Hugging Face account was created, for the organisers' audits.
     safe_username : str
         Sanitised username for use in S3 keys and file paths.
     user_alias : str
@@ -42,7 +67,7 @@ class Submission(BaseModel):
     affiliation : str
         Institutional affiliation — stored privately.
     model_report_link : str
-        URL to method report (required before deadline).
+        URL to model report (required before deadline).
     used_proprietary_data : bool
         Whether proprietary data was used in training.
     open_source_code : bool
@@ -60,11 +85,13 @@ class Submission(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     # --- generated ---
-    submission_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    submission_id: str = Field(default_factory=new_submission_id)
     submitted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # --- public identity ---
     username: str
+    hf_user_id: str = ""
+    hf_account_created_at: datetime | None = None
     safe_username: str = ""
     user_alias: str = ""
     anonymous: bool = True

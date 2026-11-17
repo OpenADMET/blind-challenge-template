@@ -1,13 +1,14 @@
-"""Configuration file for the blind challenge.
+"""Backend configuration for the blind challenge.
 
-This module is the single source of truth for the challenge's endpoints, dataset
-sizes, deadlines, and metrics. When standing up a new challenge from this
-template, work through every ``TODO`` below and keep ``hf_space/config.py`` in
-sync with the endpoint lists / dataset sizes set here.
+The single source of truth for the challenge's deadlines, datasets, scoring and
+tracks, and the S3 layout. When standing up a new challenge, work through every
+``TODO`` and keep ``hf_space/config.py`` in step (``tests/backend/test_config_drift.py``
+checks the settings both sides share).
 """
 
 import os
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from functools import partial
 
 from scipy.stats import kendalltau, spearmanr
@@ -23,103 +24,269 @@ from sklearn.metrics import (
 
 from .custom_scoring_functions import rae_soft_threshold_absolute_error
 
-# Challenge information
+# -------------------------------- Challenge settings --------------------------------
+
 # TODO: set these to this challenge's real cutoffs. Format must stay
 # "%Y-%m-%dT%H:%M:%SZ" (UTC). Submissions after INTERIM_LEADERBOARD_DEADLINE are
 # excluded from the interim leaderboard; after FINAL_LEADERBOARD_DEADLINE, from
 # the final leaderboard. The 2099 values below are placeholders.
 INTERIM_LEADERBOARD_DEADLINE = "2099-01-01T23:59:59Z"
 FINAL_LEADERBOARD_DEADLINE = "2099-12-31T23:59:59Z"
+# Drop entries without a reachable model report link from the final leaderboard.
+# Must mirror hf_space.config.REQUIRE_MODEL_REPORT.
+REQUIRE_MODEL_REPORT = True
 
+# ------------------------------------- Datasets -------------------------------------
+
+# Activity: the compounds the regression and classification tracks share.
+# TODO: set to the number of compounds in this challenge's activity test set.
+ACTIVITY_DATASET_SIZE = 750
+IDENTIFIER_COLUMNS = ["SMILES", "Molecule_Name"]
+# Columns holding each regression endpoint's credible interval in the ground truth.
+REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX = "_conf_high"
+REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX = "_conf_low"
+# Endpoints scored on log-transformed values.
+ENDPOINTS_TO_LOG_TRANSFORM: list[str] = []
+
+# Structure.
+# TODO: set to the number of compounds in this challenge's structure test set
+# (0 / unused if this challenge has no structure track).
+STRUCTURE_DATASET_SIZE = 184
+# TODO: filename of the reference protein structure in the ground-truth data.
+PROTEIN_DATA_FILE = "protein_structure.pdb"
+
+# ----------------------- Compound sets and leaderboard stages -----------------------
+
+# Compound sets, from the "set" column of a dataset's identifiers parquet: "live"
+# compounds, "hidden" compounds, and "all" of them.
+COMPOUND_SETS = ("all", "live", "hidden")
+LEADERBOARD_STAGES = ("live", "interim", "final")
+# The live leaderboard ranks on the live compounds; interim and final on all of them.
+DEFAULT_LEADERBOARD_SETS = {"live": "live", "interim": "all", "final": "all"}
+
+
+def scores_uri_column(compound_set: str) -> str:
+    """Name of the manifest column holding a compound set's averaged-results URI.
+
+    Parameters
+    ----------
+    compound_set : str
+        One of ``COMPOUND_SETS``.
+
+    Returns
+    -------
+    str
+        E.g. ``"live_scores_uri"``.
+
+    """
+    return f"{compound_set}_scores_uri"
+
+
+# ------------------------------------- Scoring --------------------------------------
+
+# Scoring function for each activity metric a TrackSpec can list (structure metrics
+# come from OpenStructure). zero_division=0 scores a resample with no positive
+# predictions as 0 instead of warning.
+METRIC_FUNCTIONS: dict[str, Callable] = {
+    "ST-RAE": rae_soft_threshold_absolute_error,
+    "MAE": mean_absolute_error,
+    "R2": r2_score,
+    "Spearman_R": spearmanr,
+    "Kendall_Tau": kendalltau,
+    "MCC": matthews_corrcoef,
+    "Accuracy": accuracy_score,
+    "Precision": partial(precision_score, zero_division=0),
+    "Recall": partial(recall_score, zero_division=0),
+    "F1": partial(f1_score, zero_division=0),
+}
+# Value used when a metric is undefined for a bootstrap sample. Rank correlations
+# are NaN when predictions (or truth) have zero variance, e.g. a constant predictor:
+# score that as no correlation rather than failing. Any other metric returning a
+# non-finite value is a bug, so bootstrap_metrics raises.
+METRIC_NAN_FALLBACK: dict[str, float] = {
+    "Spearman_R": 0.0,
+    "Kendall_Tau": 0.0,
+}
 # Multi-endpoint macro-averaging (see evaluate_predictions.compute_macro_bootstrap_results).
 # A pseudo-endpoint, scored alongside the real endpoints in every bootstrap sample, whose
 # per-metric values are macro-averages across endpoints rather than raw per-endpoint scores.
 MACRO_ENDPOINT_LABEL = "MA"
 
-# AWS S3 configuration
-S3_BUCKET: str = os.environ.get("S3_BUCKET", "blind-challenge-template")
+# Bootstrap resamples per submission (B), drawn once at scoring time with a fixed
+# seed; pairwise comparisons join two submissions' samples on "Sample". Never change
+# it while a challenge runs. The smallest two-sided p-value is 2 / (B + 1). At 1,000,
+# p-values near the significance cut-offs varied up to 5x between seeds; 10,000 cuts
+# that about 3x for ~70 s of scoring per classification run (#11). Tests score with
+# 1,000 (tests/backend/backend_test_settings.py).
+BOOTSTRAP_SAMPLES = 10000
 
-# Discord notifications — set DISCORD_NOTIFICATIONS=0 to disable
+# BiSyRMSD (Å) given when OST can't match the ligand: far worse than any real pose.
+BISYRMSD_NAN_PENALTY: float = 20.0
+# How many PoseBusters checks a pose may fail before it gets worst-case scores
+# (LDDT 0, BiSyRMSD the penalty above).
+POSEBUSTERS_MAX_FAILURES: int = 0
+
+
+# -------------------------------------- Tracks --------------------------------------
+
+
+@dataclass(frozen=True)
+class TrackSpec:
+    """What a competition track is: its data, endpoints, metrics and ranking.
+
+    Mirrored in ``hf_space/config.py``; ``tests/backend/test_config_drift.py``
+    checks the two agree.
+
+    Attributes
+    ----------
+    track : str
+        Track name, used in S3 prefixes ("regression", "classification",
+        "structure").
+    dataset : str
+        The ground-truth dataset scored against: ``ground_truth/{dataset}-*`` in S3.
+        Tracks scoring the same compounds share one ("activity").
+    endpoints : list[str]
+        Endpoint names, in display order. Activity endpoints must match columns in
+        the ground-truth dataset. One leaderboard is built per endpoint, plus a
+        macro-averaged master (``MACRO_ENDPOINT_LABEL``) when there are several.
+    metrics : list[str]
+        Metric names, in display order. Activity metrics are looked up in
+        ``METRIC_FUNCTIONS``.
+    primary_metric : str
+        The metric leaderboards are ranked by.
+    higher_is_better : bool
+        Direction of ``primary_metric``.
+    dataset_size : int
+        Number of compounds a submission must cover.
+    extra_columns : tuple[str, ...]
+        Additional averaged-results columns to carry onto the leaderboard.
+    leaderboard_sets : dict[str, str]
+        The compound set each leaderboard stage ("live", "interim", "final") ranks
+        on: "live", "hidden" or "all" (live + hidden). The sets come from the
+        ``set`` column of the dataset's identifiers. A submission is scored on
+        every set its stages use.
+
+    """
+
+    track: str
+    dataset: str
+    endpoints: list[str]
+    metrics: list[str]
+    primary_metric: str
+    higher_is_better: bool
+    dataset_size: int
+    extra_columns: tuple[str, ...] = field(default=())
+    leaderboard_sets: dict[str, str] = field(
+        default_factory=lambda: dict(DEFAULT_LEADERBOARD_SETS)
+    )
+
+    def __post_init__(self) -> None:
+        """Reject a spec that can't be ranked or scored consistently.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If ``primary_metric`` isn't one of ``metrics``, a metric or endpoint is
+            listed twice, ``dataset_size`` is negative, or ``leaderboard_sets``
+            doesn't map every stage to a known compound set.
+
+        """
+        if self.primary_metric not in self.metrics:
+            raise ValueError(
+                f"{self.track}: primary_metric {self.primary_metric!r} is not one of "
+                f"its metrics {self.metrics}"
+            )
+        for name, values in (("metrics", self.metrics), ("endpoints", self.endpoints)):
+            duplicates = sorted({v for v in values if values.count(v) > 1})
+            if duplicates:
+                raise ValueError(f"{self.track}: duplicate {name} {duplicates}")
+        if self.dataset_size < 0:
+            raise ValueError(f"{self.track}: dataset_size must not be negative")
+        if set(self.leaderboard_sets) != set(LEADERBOARD_STAGES) or not set(
+            self.leaderboard_sets.values()
+        ) <= set(COMPOUND_SETS):
+            raise ValueError(
+                f"{self.track}: leaderboard_sets must map each of {LEADERBOARD_STAGES} "
+                f"to one of {COMPOUND_SETS}, got {self.leaderboard_sets}"
+            )
+
+    @property
+    def scored_sets(self) -> list[str]:
+        """The compound sets a submission is scored on: those any stage uses.
+
+        Returns
+        -------
+        list[str]
+            In ``COMPOUND_SETS`` order.
+
+        """
+        used = set(self.leaderboard_sets.values())
+        return [s for s in COMPOUND_SETS if s in used]
+
+    @property
+    def metric_functions(self) -> list[tuple[str, Callable]]:
+        """The track's ``(name, scoring function)`` pairs, from ``METRIC_FUNCTIONS``.
+
+        Returns
+        -------
+        list[tuple[str, Callable]]
+            One pair per metric, in ``metrics`` order.
+
+        """
+        return [(name, METRIC_FUNCTIONS[name]) for name in self.metrics]
+
+
+# TODO: rename the endpoints to this challenge's. Regression endpoints must match
+# columns in the activity ground truth (and their "_conf_low"/"_conf_high"
+# credible-interval columns), e.g. "CYP3A4_pIC50_direct_inhibition". Set
+# classification's endpoints to [] if this challenge has no classification track.
+REGRESSION_SPEC = TrackSpec(
+    track="regression",
+    dataset="activity",
+    endpoints=["ENDPOINT_1", "ENDPOINT_2", "ENDPOINT_3", "ENDPOINT_4"],
+    metrics=["ST-RAE", "MAE", "R2", "Spearman_R", "Kendall_Tau"],
+    primary_metric="ST-RAE",
+    higher_is_better=False,
+    dataset_size=ACTIVITY_DATASET_SIZE,
+)
+CLASSIFICATION_SPEC = TrackSpec(
+    track="classification",
+    dataset="activity",
+    endpoints=["ENDPOINT_5", "ENDPOINT_6"],
+    metrics=["MCC", "Accuracy", "Precision", "Recall", "F1"],
+    primary_metric="MCC",
+    higher_is_better=True,
+    dataset_size=ACTIVITY_DATASET_SIZE,
+)
+# One pseudo-endpoint: structure has a single leaderboard.
+STRUCTURE_SPEC = TrackSpec(
+    track="structure",
+    dataset="structure",
+    endpoints=["structure"],
+    metrics=["LDDT-PLI", "BiSyRMSD", "LDDT-LP"],
+    primary_metric="LDDT-PLI",
+    higher_is_better=True,
+    dataset_size=STRUCTURE_DATASET_SIZE,
+    extra_columns=("coverage_mean",),
+)
+TRACK_SPECS: dict[str, TrackSpec] = {
+    spec.track: spec for spec in (REGRESSION_SPEC, CLASSIFICATION_SPEC, STRUCTURE_SPEC)
+}
+
+
+# --------------------------- S3 layout and notifications ----------------------------
+
+S3_BUCKET: str = os.environ.get("S3_BUCKET", "blind-challenge-template")
+# Set DISCORD_NOTIFICATIONS=0 to turn off Discord notifications.
 DISCORD_NOTIFICATIONS: bool = os.environ.get("DISCORD_NOTIFICATIONS", "1") != "0"
 
-# Activity dataset
-IDENTIFIER_COLUMNS = ["SMILES", "Molecule_Name"]
-# TODO: rename to this challenge's regression endpoints. Each name must match a
-# column in the ground-truth dataset (and its "{endpoint}_conf_low"/"_conf_high"
-# credible-interval columns). Order is preserved through scoring and leaderboards.
-# e.g. ["CYP3A4_pIC50_direct_inhibition", "CYP2D6_pIC50_direct_inhibition", ...]
-REGRESSION_ENDPOINTS = [
-    "ENDPOINT_1",
-    "ENDPOINT_2",
-    "ENDPOINT_3",
-    "ENDPOINT_4",
-]
-REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX = "_conf_high"
-REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX = "_conf_low"
-# TODO: rename to this challenge's classification endpoints, or set to [] if this
-# challenge has no classification track. e.g. ["CYP2D6_is_TDI", "CYP3A4_is_TDI"]
-CLASSIFICATION_ENDPOINTS = [
-    "ENDPOINT_5",
-    "ENDPOINT_6",
-]
-ACTIVITY_ENDPOINTS = REGRESSION_ENDPOINTS + CLASSIFICATION_ENDPOINTS
-ENDPOINTS_TO_LOG_TRANSFORM: list[str] = []
-# TODO: set to the number of compounds in this challenge's activity test set.
-ACTIVITY_DATASET_SIZE = 750
-ACTIVITY_METRICS = [
-    ("ST-RAE", rae_soft_threshold_absolute_error),
-    ("MAE", mean_absolute_error),
-    ("R2", r2_score),
-    ("Spearman_R", spearmanr),
-    ("Kendall_Tau", kendalltau),
-]
-# Rank correlations (Spearman_R, Kendall_Tau) are mathematically undefined — scipy
-# returns NaN, not an exception — whenever a bootstrap sample has zero variance in
-# y_pred (e.g. a submission that predicts the same value for every compound) or
-# y_true. That's a legitimate, if uninformative, submission rather than a computation
-# error, so bootstrap_metrics substitutes this fallback instead of raising. 0.0 is the
-# "no correlation" value on both metrics' [-1, 1] scale, matching how an
-# unconditionally-constant predictor should be scored: no better than chance, not a
-# hard failure. Metrics not listed here still raise on a non-finite value (see
-# bootstrap_metrics) since for e.g. MAE/RAE/R2 that would indicate a real bug rather
-# than a valid degenerate submission.
-METRIC_NAN_FALLBACK: dict[str, float] = {
-    "Spearman_R": 0.0,
-    "Kendall_Tau": 0.0,
-}
-# zero_division=0 matches sklearn's documented degenerate-case default, avoiding
-# warnings/errors on bootstrap resamples with no positive predictions (classification
-# labels are often imbalanced). matthews_corrcoef already returns 0.0 (not NaN) in
-# its own degenerate case, so it needs no wrapping.
-CLASSIFICATION_METRICS = [
-    ("MCC", matthews_corrcoef),
-    ("Accuracy", accuracy_score),
-    ("Precision", partial(precision_score, zero_division=0)),
-    ("Recall", partial(recall_score, zero_division=0)),
-    ("F1", partial(f1_score, zero_division=0)),
-]
-SORT_REGRESSION_LEADERBOARD_BY = "ST-RAE"
-SORT_CLASSIFICATION_LEADERBOARD_BY = "MCC"
-BOOTSTRAP_SAMPLES = 1000
-
-# Structure dataset
-# TODO: set to the number of compounds in this challenge's structure test set
-# (0 / unused if this challenge has no structure track).
-STRUCTURE_DATASET_SIZE = 184
-SORT_STRUCTURE_LEADERBOARD_BY = "LDDT-PLI"
-STRUCTURE_METRICS = ["LDDT-PLI", "BiSyRMSD", "LDDT-LP"]
-# Penalty applied to BiSyRMSD when OST cannot match the ligand (lower is better,
-# so a large value is used; 20 Å is well outside any reasonable binding-site RMSD)
-BISYRMSD_NAN_PENALTY: float = 20.0
-# Worst-case scores returned for a pose that fails the PoseBusters filter. LDDT values
-# floor at 0; BiSyRMSD uses the same penalty as an unscored structure so its contribution
-# to the bootstrap mean is identically bad.
-POSEBUSTERS_MAX_FAILURES: int = 0
-# TODO: filename of the reference protein structure in the ground-truth data.
-PROTEIN_DATA_FILE = "protein_structure.pdb"
-# Structure track currently scores a single pseudo-endpoint. A future structure track
-# with multiple endpoints would also need its own STRUCTURE_LEADERBOARD_GROUPS.
-STRUCTURE_ENDPOINTS = ["structure"]
+# Ground-truth and cross-track entries-list S3 prefixes, shared by every track.
+GROUND_TRUTH_PREFIX = "ground_truth"
+ENTRIES_PREFIX = "entries"
 
 
 @dataclass(frozen=True)
@@ -128,24 +295,19 @@ class TrackPaths:
 
     All properties return S3 key prefixes (no leading/trailing slashes).
 
-    Submissions are only ever scored against two compound sets:
-    - Phase 0 ("all"): the full test set.
-    - Phase 1 ("phase_1"): the half of the test set unblinded during phase 1.
-
-    Those two score sets feed three leaderboards:
-    - "live": auto-generated by the leaderboard Lambda from phase 1 scores.
-    - "interim" / "final": generated manually from phase 0 (all-compound) scores,
-      differing only in which submissions are included (by submission cutoff).
-
-    ``endpoints`` drives leaderboard generation (see
-    ``aws_leaderboards.create_track_leaderboards``): one leaderboard is built per
-    endpoint, plus one additional macro-ranked master leaderboard (slug
-    ``MACRO_ENDPOINT_LABEL``) whenever a track has more than one endpoint.
+    ``spec`` is the track's definition; ``track`` and ``endpoints`` come from it.
     """
 
-    track: str
+    spec: TrackSpec
     valid_filenames: frozenset[str]
-    endpoints: list[str]
+
+    @property
+    def track(self) -> str:
+        return self.spec.track
+
+    @property
+    def endpoints(self) -> list[str]:
+        return self.spec.endpoints
 
     @property
     def submissions(self) -> str:
@@ -153,19 +315,23 @@ class TrackPaths:
 
     @property
     def manifest(self) -> str:
-        return f"submissions/manifest/{self.track}"
+        return f"manifests/{self.track}"
 
-    @property
-    def phase_2_entries(self) -> str:
-        return f"submissions/manifest/phase_2_entries/{self.track}"
+    def scores(self, compound_set: str) -> str:
+        """Scores prefix for one compound set, e.g. ``scores/live/regression``.
 
-    @property
-    def scores_all(self) -> str:
-        return f"scores/all/{self.track}"
+        Parameters
+        ----------
+        compound_set : str
+            One of ``COMPOUND_SETS``.
 
-    @property
-    def scores_phase_1(self) -> str:
-        return f"scores/phase_1/{self.track}"
+        Returns
+        -------
+        str
+            The S3 prefix.
+
+        """
+        return f"scores/{compound_set}/{self.track}"
 
     @property
     def leaderboard_live(self) -> str:
@@ -180,45 +346,36 @@ class TrackPaths:
         return f"leaderboard/final/{self.track}"
 
     @property
-    def scores_paths(self) -> dict[int, str]:
-        """Map phase integer to scores S3 prefix (0=all, 1=phase_1)."""
-        return {0: self.scores_all, 1: self.scores_phase_1}
+    def head_to_head(self) -> str:
+        """Release files for the Space's head-to-head tab, written after the challenge.
+
+        The only place the Space can read ground truth, and other entrants'
+        predictions and scores; see ``head_to_head_release``.
+        """
+        return f"{self.leaderboard_final}/head_to_head"
 
     @property
     def ground_truth(self) -> str:
-        """Ground-truth data prefix. Same for every track — filenames disambiguate."""
-        return "ground_truth"
+        """Ground-truth data prefix. Same for every track; filenames disambiguate."""
+        return GROUND_TRUTH_PREFIX
 
     @property
-    def all_entries(self) -> str:
-        """Cross-track entries list prefix."""
-        return "entries"
+    def identifiers_file(self) -> str:
+        """S3 key of the track's dataset identifiers parquet."""
+        return f"{GROUND_TRUTH_PREFIX}/{self.spec.dataset}-identifiers.parquet"
 
 
-# "activity" is no longer an upload track — nothing is ever uploaded to
-# submissions/activity/* (hence the empty valid_filenames). ACTIVITY_PATHS is kept
-# only as the shared ground-truth/identifiers source (activity-dataset.parquet,
-# activity-identifiers.parquet) used by both the regression and classification
-# tracks below, since both score against the same underlying compound set.
-ACTIVITY_PATHS = TrackPaths(
-    track="activity",
-    valid_filenames=frozenset(),
-    endpoints=ACTIVITY_ENDPOINTS,
-)
 REGRESSION_PATHS = TrackPaths(
-    track="regression",
+    spec=REGRESSION_SPEC,
     valid_filenames=frozenset({"predictions.parquet", "predictions.csv"}),
-    endpoints=REGRESSION_ENDPOINTS,
 )
 CLASSIFICATION_PATHS = TrackPaths(
-    track="classification",
+    spec=CLASSIFICATION_SPEC,
     valid_filenames=frozenset({"predictions.parquet", "predictions.csv"}),
-    endpoints=CLASSIFICATION_ENDPOINTS,
 )
 STRUCTURE_PATHS = TrackPaths(
-    track="structure",
+    spec=STRUCTURE_SPEC,
     valid_filenames=frozenset({"structures.zip"}),
-    endpoints=STRUCTURE_ENDPOINTS,
 )
 
 

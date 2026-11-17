@@ -10,11 +10,12 @@ import pandas as pd
 from loguru import logger
 
 from .config import (
-    ACTIVITY_PATHS,
     CLASSIFICATION_PATHS,
+    ENTRIES_PREFIX,
     REGRESSION_PATHS,
     S3_BUCKET,
     STRUCTURE_PATHS,
+    scores_uri_column,
 )
 from .utils import _safeify_username
 
@@ -147,9 +148,7 @@ def save_all_entries_list(entries_df: pd.DataFrame) -> str:
         The S3 path of the saved "latest" file.
 
     """
-    # ``all_entries`` is the same for every track — this list spans both tracks, so
-    # which TrackPaths instance it's read from doesn't matter.
-    namespace = f"s3://{S3_BUCKET}/{ACTIVITY_PATHS.all_entries}"
+    namespace = f"s3://{S3_BUCKET}/{ENTRIES_PREFIX}"
     wr.s3.to_csv(
         df=entries_df,
         path=f"{namespace}/all_entries_{datetime.now().isoformat()}.csv",
@@ -223,17 +222,16 @@ def create_manifest(
         "used_proprietary_data",
         "open_source_code",
         "model_report_link",
-        "all_scores_uri",
-        "phase_1_scores_uri",
+        "original_data_uri",
     ]
-    select_clause = ", ".join(manifest_select_columns)
+    uri_columns = [scores_uri_column(c) for c in paths.spec.scored_sets]
+    select_clause = ", ".join(manifest_select_columns + uri_columns)
+    scored_clause = " AND ".join(f"{c} IS NOT NULL" for c in uri_columns)
     query = f"""
         SELECT {select_clause}
         FROM read_parquet('{manifest_path}', union_by_name=true)
         WHERE valid_submission = True
-          AND (
-              phase_1_scores_uri IS NOT NULL
-          )
+          AND {scored_clause}
     """
 
     logger.info(

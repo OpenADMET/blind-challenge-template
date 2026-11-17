@@ -13,9 +13,9 @@ from loguru import logger
 
 from .config import (
     ACTIVITY_DATASET_SIZE,
-    CLASSIFICATION_ENDPOINTS,
+    CLASSIFICATION_SPEC,
     IDENTIFIER_COLUMNS,
-    REGRESSION_ENDPOINTS,
+    REGRESSION_SPEC,
     STRUCTURE_DATASET_SIZE,
 )
 from .evaluate_predictions import count_ligand_residues
@@ -92,7 +92,7 @@ def get_regression_schema() -> pa.DataFrameSchema:
     Regression endpoints must be finite floats.
     """
     columns = {col: pa.Column(str, nullable=False) for col in IDENTIFIER_COLUMNS}
-    for col in REGRESSION_ENDPOINTS:
+    for col in REGRESSION_SPEC.endpoints:
         columns[col] = pa.Column(
             float,
             nullable=False,
@@ -121,7 +121,7 @@ def get_classification_schema() -> pa.DataFrameSchema:
     ``df[col].dropna().isin([0, 1, True, False]).all()``).
     """
     columns = {col: pa.Column(str, nullable=False) for col in IDENTIFIER_COLUMNS}
-    for col in CLASSIFICATION_ENDPOINTS:
+    for col in CLASSIFICATION_SPEC.endpoints:
         columns[col] = pa.Column(
             nullable=False,
             checks=[
