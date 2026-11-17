@@ -178,7 +178,7 @@ Submit a **`.parquet` or `.csv`** file with exactly **{ACTIVITY_DATASET_SIZE} ro
 """
         structure_markdown = f"""
 #### Structure Track
-Submit a **`.zip`** archive containing exactly **{STRUCTURE_DATASET_SIZE} `.pdb` files**, one per compound, named after the compound identifier (e.g. `x00011-1.pdb`). Each file must be a full protein–ligand complex with the ligand residue named **`LIG`**.
+Submit a **`.zip`** archive containing exactly **{STRUCTURE_DATASET_SIZE} `.pdb` files**, one per compound, named after the compound identifier (e.g. `x00011-1.pdb`). Each file must be a full protein–ligand complex containing **exactly one** predicted ligand pose, as a single residue named **`LIG`**. A submission where any file has no `LIG` residue, or more than one, is rejected as a whole, and the rejection still counts towards the submission cooldown, so please check your files with the validation code first.
 """
         submission_markdown = intro_markdown
         if regression_active:
