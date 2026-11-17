@@ -50,6 +50,7 @@ If AI tools contributed materially to a PR, that's fine and you don't need to fl
   black --check .          # or: ruff format --check .
   mypy backend
   pytest tests/backend/ --cov=backend
+  pytest tests/hf_space/ --cov=hf_space   # the Space's own tests
   ```
 
 - **Scoring / config changes:** `backend/config.py` and `hf_space/config.py` are the source of truth for endpoints and dataset sizes, and the test fixtures follow them. If you change endpoint names or sizes, regenerate the fixtures under `tests/backend/test_data/` and update `docs/` accordingly. Keep the two `config.py` files in sync.

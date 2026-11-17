@@ -51,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r hf_space/requirements.txt
-          pip install ruff==0.15.20 mypy==2.2.0 pydoclint==0.9.1 pytest==9.1.1 \
+          pip install ruff==0.15.20 mypy==2.2.0 pydoclint==0.9.1 pytest==9.1.1 pytest-cov==7.1.0 \
             pandas-stubs==2.3.3.260113 "boto3-stubs[s3]==1.43.92"
 
       - name: Lint (ruff)
@@ -64,4 +64,12 @@ jobs:
         run: pydoclint hf_space/
 
       - name: Unit tests
-        run: pytest tests/hf_space/ -v
+        run: pytest tests/hf_space/ -v --cov=hf_space --cov-report=term-missing
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hf-space-coverage-report
+          path: .coverage
+          if-no-files-found: ignore
