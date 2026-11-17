@@ -24,13 +24,21 @@ resource "aws_iam_user_policy" "hf_space" {
         Resource = "${aws_s3_bucket.main.arn}/submissions/*"
       },
       {
-        Sid    = "GetChallengeData"
-        Effect = "Allow"
-        Action = ["s3:GetObject"]
-        Resource = [
-          "${aws_s3_bucket.main.arn}/leaderboard/*",
-          "${aws_s3_bucket.main.arn}/submissions/*"
-        ]
+        # The Space only reads the published leaderboard CSVs. It writes
+        # submissions/* but must never read them back: they are other
+        # participants' predictions.
+        Sid      = "GetLeaderboards"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${aws_s3_bucket.main.arn}/leaderboard/*"
+      },
+      {
+        # The Space must never read ground truth. An explicit Deny also beats any
+        # Allow added here later by mistake.
+        Sid      = "DenyGroundTruth"
+        Effect   = "Deny"
+        Action   = ["s3:GetObject"]
+        Resource = "${aws_s3_bucket.main.arn}/ground_truth/*"
       },
       {
         Sid      = "ListSubmissionPrefixes"

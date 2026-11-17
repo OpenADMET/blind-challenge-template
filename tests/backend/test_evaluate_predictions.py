@@ -14,6 +14,8 @@ from backend.config import (
     REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX,
     REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX,
     REGRESSION_ENDPOINTS,
+    STRUCTURE_ENDPOINTS,
+    STRUCTURE_METRICS,
 )
 from backend.evaluate_predictions import (
     _metric_needs_credible_interval_bounds,
@@ -21,6 +23,7 @@ from backend.evaluate_predictions import (
     add_macro_endpoint,
     average_bootstrap_results_by_endpoint,
     bootstrap_metrics,
+    bootstrap_structure_metrics,
     compute_macro_bootstrap_results,
     pivot_endpoint_results_wide,
     score_activity_predictions,
@@ -36,7 +39,7 @@ def test_metrics_for_endpoint_dispatch():
 
 
 def test_score_activity_predictions(
-    example_activity_predictions_data, example_activity_gound_truth_data
+    example_activity_predictions_data, example_activity_ground_truth_data
 ):
     """Test scoring of activity predictions — no macro pseudo-endpoint included.
 
@@ -48,7 +51,7 @@ def test_score_activity_predictions(
     """
     scored_df = score_activity_predictions(
         example_activity_predictions_data,
-        example_activity_gound_truth_data,
+        example_activity_ground_truth_data,
         endpoints=ACTIVITY_ENDPOINTS,
     )
     assert not scored_df.empty
@@ -79,7 +82,7 @@ def test_score_activity_predictions(
 
 
 def test_score_activity_predictions_excludes_missing_classification_ground_truth(
-    example_activity_predictions_data, example_activity_gound_truth_data
+    example_activity_predictions_data, example_activity_ground_truth_data
 ):
     """Compounds with a missing classification label are excluded, not crashed on.
 
@@ -88,12 +91,12 @@ def test_score_activity_predictions_excludes_missing_classification_ground_truth
     merge, which np.isnan can't handle.
     """
     endpoint = CLASSIFICATION_ENDPOINTS[0]
-    assert example_activity_gound_truth_data[endpoint].isna().any(), (
+    assert example_activity_ground_truth_data[endpoint].isna().any(), (
         "fixture must have >=1 missing classification label to exercise this path"
     )
     scored_df = score_activity_predictions(
         example_activity_predictions_data,
-        example_activity_gound_truth_data,
+        example_activity_ground_truth_data,
         endpoints=ACTIVITY_ENDPOINTS,
     )
     endpoint_samples = scored_df[scored_df["Endpoint"] == endpoint]
@@ -104,7 +107,7 @@ def test_score_activity_predictions_excludes_missing_classification_ground_truth
 
 
 def test_bootstrap_metrics_regression(
-    example_activity_predictions_data, example_activity_gound_truth_data
+    example_activity_predictions_data, example_activity_ground_truth_data
 ):
     """Test bootstrapping of metrics for a regression endpoint.
 
@@ -116,19 +119,19 @@ def test_bootstrap_metrics_regression(
     # A couple of compounds genuinely lack ground truth for this endpoint —
     # bootstrap_metrics itself doesn't filter (score_activity_predictions does that
     # before calling it), so mirror that exclusion here.
-    has_ground_truth = example_activity_gound_truth_data[endpoint].notna()
+    has_ground_truth = example_activity_ground_truth_data[endpoint].notna()
     upper_col = f"{endpoint}{REGRESSION_CREDIBLE_INTERVALS_UPPER_SUFFIX}"
     lower_col = f"{endpoint}{REGRESSION_CREDIBLE_INTERVALS_LOWER_SUFFIX}"
     bootstrap_df = bootstrap_metrics(
         example_activity_predictions_data.loc[has_ground_truth, endpoint].to_numpy(),
-        example_activity_gound_truth_data.loc[has_ground_truth, endpoint].to_numpy(),
+        example_activity_ground_truth_data.loc[has_ground_truth, endpoint].to_numpy(),
         endpoint,
         n_bootstrap_samples=BOOTSTRAP_SAMPLES,
         metrics=ACTIVITY_METRICS,
-        y_true_upper=example_activity_gound_truth_data.loc[
+        y_true_upper=example_activity_ground_truth_data.loc[
             has_ground_truth, upper_col
         ].to_numpy(),
-        y_true_lower=example_activity_gound_truth_data.loc[
+        y_true_lower=example_activity_ground_truth_data.loc[
             has_ground_truth, lower_col
         ].to_numpy(),
     )
@@ -143,17 +146,17 @@ def test_bootstrap_metrics_regression(
 
 
 def test_bootstrap_metrics_regression_requires_credible_interval_bounds(
-    example_activity_predictions_data, example_activity_gound_truth_data
+    example_activity_predictions_data, example_activity_ground_truth_data
 ):
     """ST-RAE needs credible-interval bounds — omitting them raises, not silently 0s."""
     endpoint = REGRESSION_ENDPOINTS[0]
-    has_ground_truth = example_activity_gound_truth_data[endpoint].notna()
+    has_ground_truth = example_activity_ground_truth_data[endpoint].notna()
     with pytest.raises(RuntimeError, match="ST-RAE"):
         bootstrap_metrics(
             example_activity_predictions_data.loc[
                 has_ground_truth, endpoint
             ].to_numpy(),
-            example_activity_gound_truth_data.loc[
+            example_activity_ground_truth_data.loc[
                 has_ground_truth, endpoint
             ].to_numpy(),
             endpoint,
@@ -196,13 +199,13 @@ def test_bootstrap_metrics_constant_prediction_falls_back_instead_of_raising():
 
 
 def test_bootstrap_metrics_classification(
-    example_activity_predictions_data, example_activity_gound_truth_data
+    example_activity_predictions_data, example_activity_ground_truth_data
 ):
     """Test bootstrapping of metrics for a classification endpoint."""
     endpoint = CLASSIFICATION_ENDPOINTS[0]
-    has_ground_truth = example_activity_gound_truth_data[endpoint].notna()
+    has_ground_truth = example_activity_ground_truth_data[endpoint].notna()
     y_true = (
-        example_activity_gound_truth_data.loc[has_ground_truth, endpoint]
+        example_activity_ground_truth_data.loc[has_ground_truth, endpoint]
         .astype(bool)
         .to_numpy()
     )
@@ -377,3 +380,14 @@ def test_pivot_endpoint_results_wide(example_regression_bootstrap_scores):
         assert f"{endpoint}_ST-RAE_std" in wide.columns
 
     assert wide.shape[1] == (len(REGRESSION_ENDPOINTS) + 1) * len(ACTIVITY_METRICS) * 2
+
+
+def test_bootstrap_structure_metrics_uses_configured_endpoint_label():
+    """Structure bootstrap rows carry STRUCTURE_ENDPOINTS[0], so the wide averaged
+    results are prefixed with the same label the leaderboard narrows on (#25)."""
+    per_compound = pd.DataFrame({m: np.linspace(0, 1, 10) for m in STRUCTURE_METRICS})
+    bootstrap_df = bootstrap_structure_metrics(per_compound, 5)
+    assert set(bootstrap_df["Endpoint"]) == {STRUCTURE_ENDPOINTS[0]}
+
+    wide = pivot_endpoint_results_wide(average_bootstrap_results_by_endpoint(bootstrap_df))
+    assert all(c.startswith(f"{STRUCTURE_ENDPOINTS[0]}_") for c in wide.columns)

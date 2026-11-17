@@ -58,7 +58,7 @@ def get_leaderboard(track: str, stage: str, endpoint_slug: str) -> pd.DataFrame 
         "live", "interim", or "final".
     endpoint_slug : str
         Which leaderboard variant to fetch — one of ``track_paths.endpoints``
-        (e.g. "ENDPOINT_1", or "Structure" for the structure track's one
+        (e.g. "ENDPOINT_1", or "structure" for the structure track's one
         endpoint), or ``MACRO_ENDPOINT_LABEL`` ("MA") for a multi-endpoint track's
         macro-ranked master leaderboard.
 
@@ -183,7 +183,9 @@ def get_averaged_scores_for_leaderboard(
 
     averaged_scores: dict[int, pd.DataFrame] = {}
     for idx, row in manifest.iterrows():
-        averaged_scores[cast(int, idx)] = averaged_by_uri[row["scores_uri_for_leaderboard"]]
+        averaged_scores[cast(int, idx)] = averaged_by_uri[
+            row["scores_uri_for_leaderboard"]
+        ]
     return averaged_scores
 
 
@@ -236,6 +238,11 @@ def _narrow_averaged_results_to_endpoint(
     it came from — letting a single ``primary_metric`` string (e.g. ``"ST-RAE"``) work
     for any endpoint's leaderboard.
 
+    The prefix match is case-insensitive. Structure scores used to be saved under a
+    hard-coded ``"Structure"`` label while ``STRUCTURE_ENDPOINTS`` is
+    ``["structure"]``, and files already scored that way are still in S3. Endpoint
+    names must therefore not differ from each other only by case.
+
     Parameters
     ----------
     wide_results : pd.DataFrame
@@ -249,9 +256,11 @@ def _narrow_averaged_results_to_endpoint(
         Single-row DataFrame with that endpoint's bare metric columns.
 
     """
-    prefix = f"{endpoint}_"
+    prefix = f"{endpoint}_".lower()
     columns = {
-        c: c[len(prefix) :] for c in wide_results.columns if c.startswith(prefix)
+        c: c[len(prefix) :]
+        for c in wide_results.columns
+        if c.lower().startswith(prefix)
     }
     return wide_results[list(columns.keys())].rename(columns=columns)
 
@@ -366,7 +375,7 @@ def _build_leaderboard(
         significance testing.
     endpoint : str
         Which endpoint's leaderboard to build — one of ``track_paths.endpoints``
-        (e.g. "Structure" for the structure track's one endpoint), or
+        (e.g. "structure" for the structure track's one endpoint), or
         ``MACRO_ENDPOINT_LABEL`` ("MA") for the master leaderboard.
     additional_columns : list[str]
         Extra bare columns to copy from each entry's narrowed averaged results
@@ -384,13 +393,16 @@ def _build_leaderboard(
     # metric name (e.g. "ST-RAE") regardless of which endpoint/track this leaderboard is
     # for. Bootstrap files hold one row per (Sample, Endpoint) pair — without
     # narrowing, EntryComparison's merge-on-"Sample" would fan out across every
-    # endpoint.
+    # endpoint. Endpoint matching is case-insensitive; see
+    # _narrow_averaged_results_to_endpoint.
     averaged_scores = {
         idx: _narrow_averaged_results_to_endpoint(df, endpoint)
         for idx, df in averaged_scores.items()
     }
     bootstrap_scores = {
-        idx: df[df["Endpoint"] == endpoint].drop(columns=["Endpoint"])
+        idx: df[df["Endpoint"].str.lower() == endpoint.lower()].drop(
+            columns=["Endpoint"]
+        )
         for idx, df in bootstrap_scores.items()
     }
 

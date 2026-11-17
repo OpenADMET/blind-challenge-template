@@ -37,7 +37,7 @@ STRUCTURE_TRACK = "structure"
 # leaderboard (only present once a track has more than one endpoint), a
 # REGRESSION_ENDPOINTS/CLASSIFICATION_ENDPOINTS entry (e.g.
 # "ENDPOINT_1") for that endpoint's own leaderboard, or
-# STRUCTURE_ENDPOINTS[0] ("Structure") for the structure track's one leaderboard —
+# STRUCTURE_ENDPOINTS[0] ("structure") for the structure track's one leaderboard —
 # see leaderboards.format_leaderboard_uri.
 # {version} is "latest" or an ISO timestamp.
 # Every leaderboard file (all tracks, all stages) follows this one convention — must

@@ -9,6 +9,8 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.errors import SchemaErrors
 
+from loguru import logger
+
 from .config import (
     ACTIVITY_DATASET_SIZE,
     CLASSIFICATION_ENDPOINTS,
@@ -16,6 +18,7 @@ from .config import (
     REGRESSION_ENDPOINTS,
     STRUCTURE_DATASET_SIZE,
 )
+from .evaluate_predictions import count_ligand_residues
 
 
 @dataclass
@@ -285,6 +288,57 @@ def validate_structure_submission(
                 f"Zip file must contain exactly {STRUCTURE_DATASET_SIZE} PDB files."
             )
             return validation_result
-        # TODO: Validate ligand has numbered atoms and report if not
-        # TODO: Validate correct SMILES is parse?
+
+        wrong_ligand_count = _files_without_exactly_one_ligand(zip_file, pdb_files)
+        if wrong_ligand_count:
+            validation_result.add_error(
+                "Each PDB file must contain exactly one predicted ligand pose: one "
+                "residue named LIG. These files don't:",
+                wrong_ligand_count,
+            )
     return validation_result
+
+
+def _files_without_exactly_one_ligand(
+    zip_file: zipfile.ZipFile, pdb_files: list[str]
+) -> list[str]:
+    """List the PDB files in a structure zip that don't hold exactly one ``LIG``.
+
+    Files are read with OpenStructure, as the scorer reads them, and ligands are
+    counted with the scorer's own rule (``count_ligand_residues``), so validation
+    and scoring can't disagree. A file OST can't parse at all is skipped here: the
+    scorer can't read it either, so it scores as a failed compound.
+
+    Parameters
+    ----------
+    zip_file : zipfile.ZipFile
+        The open submission zip.
+    pdb_files : list[str]
+        Names of the PDB members to check.
+
+    Returns
+    -------
+    list[str]
+        One ``"<file name>: <n> LIG residues"`` entry per offending file, sorted.
+
+    """
+    # Imported here so the activity tracks don't need OpenStructure installed.
+    from ost import io  # type: ignore[import]
+
+    profile = io.profiles.Get("DEFAULT").Copy()
+    # Matches PDBPrep(..., fault_tolerant=True) in score_single_structure.
+    profile.fault_tolerant = True
+
+    offending = []
+    for name in sorted(pdb_files):
+        try:
+            entity = io.PDBStrToEntity(
+                zip_file.read(name).decode("utf-8", errors="replace"), profile
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not parse {} to count ligands: {}", name, exc)
+            continue
+        n_ligands = count_ligand_residues(entity)
+        if n_ligands != 1:
+            offending.append(f"{Path(name).name}: {n_ligands} LIG residues")
+    return offending

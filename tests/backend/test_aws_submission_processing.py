@@ -13,7 +13,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
 import awswrangler as wr
 import pandas as pd
@@ -452,10 +452,11 @@ def _patch_tabular_submission_pipeline(monkeypatch, validate_attr, score_attr, s
     score_mock = MagicMock(return_value=score_return)
     monkeypatch.setattr(asp, score_attr, score_mock)
 
-    to_parquet_mock = MagicMock()
+    # Autospecced, so a call with arguments the real function doesn't accept fails.
+    to_parquet_mock = create_autospec(asp.wr.s3.to_parquet)
     monkeypatch.setattr(asp.wr.s3, "to_parquet", to_parquet_mock)
 
-    save_metadata_mock = MagicMock()
+    save_metadata_mock = create_autospec(asp.save_validated_submission_metadata)
     monkeypatch.setattr(asp, "save_validated_submission_metadata", save_metadata_mock)
     monkeypatch.setattr(asp, "post_result_to_discord", lambda *a, **kw: None)
 
@@ -850,10 +851,11 @@ def _patch_structure_submission_pipeline(monkeypatch, tmp_path, per_compound_df)
     )
     monkeypatch.setattr(asp, "score_structure_submission", score_mock)
 
-    to_parquet_mock = MagicMock()
+    # Autospecced, so a call with arguments the real function doesn't accept fails.
+    to_parquet_mock = create_autospec(asp.wr.s3.to_parquet)
     monkeypatch.setattr(asp.wr.s3, "to_parquet", to_parquet_mock)
 
-    save_metadata_mock = MagicMock()
+    save_metadata_mock = create_autospec(asp.save_validated_submission_metadata)
     monkeypatch.setattr(asp, "save_validated_submission_metadata", save_metadata_mock)
     monkeypatch.setattr(asp, "post_result_to_discord", lambda *a, **kw: None)
 
