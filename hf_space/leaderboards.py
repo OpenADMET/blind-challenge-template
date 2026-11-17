@@ -241,6 +241,11 @@ def _prepare_activity_df(
 def _prepare_structure_df(df: pd.DataFrame, for_download: bool = False) -> pd.DataFrame:
     """Sort and rename structure leaderboard columns (no HTML).
 
+    Rows are ordered by the backend's ``rank``, as for activity leaderboards, so the
+    Space never disagrees with ``SORT_STRUCTURE_LEADERBOARD_BY`` and doesn't need any
+    particular metric column to be present. A CSV written before a metric existed
+    still renders; the missing column is simply absent.
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -256,7 +261,7 @@ def _prepare_structure_df(df: pd.DataFrame, for_download: bool = False) -> pd.Da
         Prepared DataFrame.
 
     """
-    df = df.sort_values("LDDT-PLI_mean", ascending=False).reset_index(drop=True)
+    df = df.sort_values("rank", ascending=True).reset_index(drop=True)
     rename_map = {
         "LDDT-PLI_mean": "LDDT-PLI",
         "BiSyRMSD_mean": "BiSyRMSD",

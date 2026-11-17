@@ -217,23 +217,40 @@ def test_FinalLeaderboard_includes_additional_columns(mock_bootstrap_data):
     assert leaderboard.leaderboard_df.iloc[0]["coverage_mean"] == pytest.approx(0.87)
 
 
-def test_FinalLeaderboard_missing_additional_column_raises(mock_bootstrap_data):
-    """Check that requesting a missing extra column raises a clear error."""
-    averaged_results = pd.DataFrame({"accuracy_mean": [0.91], "accuracy_std": [0.02]})
-    entry = LeaderboardEntry(
-        username="user1",
-        anonymous=False,
-        user_alias="u1",
-        submitted_at=pd.Timestamp("2024-01-01"),
-        model_report_link="",
-        used_proprietary_data=False,
-        averaged_results=averaged_results,
-        bootstrap_data=mock_bootstrap_data,
+def test_FinalLeaderboard_missing_additional_column_is_nan(mock_bootstrap_data):
+    """An entry missing an extra column gets NaN for it; the other entries and the
+    rest of the leaderboard are unaffected (#26)."""
+
+    def _entry(username: str, averaged_results: pd.DataFrame) -> LeaderboardEntry:
+        return LeaderboardEntry(
+            username=username,
+            anonymous=False,
+            user_alias="",
+            submitted_at=pd.Timestamp("2024-01-01"),
+            model_report_link="",
+            used_proprietary_data=False,
+            averaged_results=averaged_results,
+            bootstrap_data=mock_bootstrap_data,
+        )
+
+    new_entry = _entry(
+        "new",
+        pd.DataFrame(
+            {"accuracy_mean": [0.91], "accuracy_std": [0.02], "coverage_mean": [0.87]}
+        ),
+    )
+    old_entry = _entry(
+        "old", pd.DataFrame({"accuracy_mean": [0.80], "accuracy_std": [0.02]})
     )
 
-    with pytest.raises(ValueError, match="coverage_mean"):
-        FinalLeaderboard(
-            entries=[entry],
-            primary_metric="accuracy",
-            additional_columns=["coverage_mean"],
-        )
+    leaderboard = FinalLeaderboard(
+        entries=[new_entry, old_entry],
+        primary_metric="accuracy",
+        significant_method=None,
+        additional_columns=["coverage_mean"],
+    )
+
+    df = leaderboard.leaderboard_df.set_index("username")
+    assert len(df) == 2
+    assert df.loc["new", "coverage_mean"] == pytest.approx(0.87)
+    assert pd.isna(df.loc["old", "coverage_mean"])
