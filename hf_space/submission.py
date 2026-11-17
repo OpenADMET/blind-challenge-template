@@ -58,6 +58,77 @@ from utils import (
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# Aliases are shown on the leaderboards, which render cells as HTML. Rendering
+# escapes them as well, but markup and control characters are refused up front.
+MAX_ALIAS_LENGTH = 40
+ALIAS_FORBIDDEN_CHARS = "<>&\"'`"
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
+# Characters that can't appear unencoded in a URL and could break out of the
+# leaderboard's href attribute.
+_URL_FORBIDDEN_RE = re.compile(r"[\s<>\"'`\x00-\x1f\x7f]")
+
+
+def alias_error(alias: str) -> str | None:
+    """Explain why an alias can't be used, or return None if it's fine.
+
+    Parameters
+    ----------
+    alias : str
+        The alias as entered, already stripped of surrounding whitespace.
+
+    Returns
+    -------
+    str | None
+        A message for the participant naming the rule the alias breaks, or None.
+
+    """
+    if len(alias) > MAX_ALIAS_LENGTH:
+        return (
+            f"Error: Your alias is {len(alias)} characters long. The maximum is "
+            f"{MAX_ALIAS_LENGTH} characters, so please shorten it."
+        )
+    bad_chars = sorted({c for c in alias if c in ALIAS_FORBIDDEN_CHARS})
+    if bad_chars:
+        listed = " ".join(bad_chars)
+        return (
+            f"Error: Your alias contains {listed}, which can't be used in an alias. "
+            f"Aliases can't contain any of {' '.join(ALIAS_FORBIDDEN_CHARS)} "
+            "because they are shown on the leaderboard web page."
+        )
+    if _CONTROL_CHAR_RE.search(alias):
+        return (
+            "Error: Your alias contains a control character (such as a tab or a "
+            "line break). Please use a single line of plain text."
+        )
+    return None
+
+
+def model_report_link_error(link: str) -> str | None:
+    """Explain why a model report link can't be used, or return None if it's fine.
+
+    Only checks for characters that can't appear unencoded in a URL; whether the
+    link starts with ``https://`` and is reachable is checked separately
+    (``utils.validate_model_details``).
+
+    Parameters
+    ----------
+    link : str
+        The link as entered, already stripped of surrounding whitespace.
+
+    Returns
+    -------
+    str | None
+        A message for the participant, or None.
+
+    """
+    if _URL_FORBIDDEN_RE.search(link):
+        return (
+            "Error: The Method Report Link contains a space, quote, < or > or "
+            "another character that can't appear in a web address. Please paste "
+            "the link exactly as it appears in your browser's address bar."
+        )
+    return None
+
 
 def render_submission_tab(
     phase: int,
@@ -131,6 +202,9 @@ Submit a **`.zip`** archive containing exactly **{STRUCTURE_DATASET_SIZE} `.pdb`
                     label="Alias (Optional display name for the leaderboard. "
                     "Anonymous by default.)",
                     placeholder="Chemprop Wizard",
+                    info=f"Up to {MAX_ALIAS_LENGTH} characters. Can't contain "
+                    f"{' '.join(ALIAS_FORBIDDEN_CHARS)}.",
+                    max_lines=1,
                 )
                 anon_checkbox = gr.Checkbox(
                     label="Submit anonymously (show alias instead of username on "
@@ -500,6 +574,16 @@ def submit_predictions(
             "Uncheck the 'Submit anonymously' box or provide an alias.",
             visible=True,
         )
+    if user_alias and user_alias.strip():
+        error = alias_error(user_alias.strip())
+        if error:
+            logger.warning(f"Rejected alias: {user_alias.strip()!r}")
+            return gr.update(value=error, visible=True)
+    if model_tag and model_tag.strip():
+        error = model_report_link_error(model_tag.strip())
+        if error:
+            logger.warning(f"Rejected model report link: {model_tag.strip()!r}")
+            return gr.update(value=error, visible=True)
     if email and email.strip() and not EMAIL_RE.match(email.strip()):
         logger.warning(f"Invalid email format: {email.strip()!r}")
         return gr.update(

@@ -1,5 +1,6 @@
 """Functions to load and display leaderboards for the blind challenge."""
 
+import html
 import tempfile
 from functools import partial
 
@@ -134,23 +135,57 @@ def _rename_display_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def make_user_clickable(name: str) -> str:
-    """Make a username clickable, linking to the user's HuggingFace profile."""
+    """Make a username clickable, linking to the user's HuggingFace profile.
+
+    Leaderboard cells are rendered as raw HTML, so the link and the name are both
+    escaped.
+    """
     link = f"https://huggingface.co/{name}" if not name.startswith("https://") else name
-    return f'<a target="_blank" href="{link}" style="color: var(--link-text-color); text-decoration: underline;text-decoration-style: dotted;">{name}</a>'
+    return f'<a target="_blank" href="{html.escape(link)}" style="color: var(--link-text-color); text-decoration: underline;text-decoration-style: dotted;">{html.escape(name)}</a>'
 
 
 def make_tag_clickable(tag: str) -> str:
-    """Make a model report link clickable, if it is a valid URL."""
+    """Make a model report link clickable, if it is a valid URL.
+
+    Leaderboard cells are rendered as raw HTML, so the URL is escaped; a quote in it
+    can't break out of the ``href`` attribute.
+    """
     if not tag or (tag == "") or (tag == "Not submitted"):
         return "Not submitted"
     if not tag.startswith(("http://", "https://")):
         return "Invalid link"
-    return f'<a target="_blank" href="{tag}" style="color: var(--link-text-color); text-decoration: underline;text-decoration-style: dotted;">link</a>'
+    return f'<a target="_blank" href="{html.escape(tag)}" style="color: var(--link-text-color); text-decoration: underline;text-decoration-style: dotted;">link</a>'
 
 
-def hide_username_for_anonymous_entries(df: pd.DataFrame) -> pd.DataFrame:
-    """Replace usernames with aliases for anonymous entries."""
-    df.loc[df["anonymous"], "username"] = df.loc[df["anonymous"], "user_alias"]
+def hide_username_for_anonymous_entries(
+    df: pd.DataFrame, escape_html: bool = True
+) -> pd.DataFrame:
+    """Replace usernames with aliases for anonymous entries.
+
+    Aliases are free text, and on the leaderboard the username column is rendered as
+    raw HTML, so by default they are escaped. Aliases are also restricted at
+    submission (see ``submission.alias_error``); escaping covers entries submitted
+    before that rule existed.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Leaderboard with ``username``, ``user_alias`` and ``anonymous`` columns.
+    escape_html : bool
+        HTML-escape the aliases. Pass False only for output that is never rendered
+        as HTML, such as the downloadable CSV.
+
+    Returns
+    -------
+    pd.DataFrame
+        The leaderboard with aliases in place of anonymous usernames, and the
+        ``user_alias`` and ``anonymous`` columns dropped.
+
+    """
+    aliases = df.loc[df["anonymous"], "user_alias"].astype(str)
+    df.loc[df["anonymous"], "username"] = (
+        aliases.map(html.escape) if escape_html else aliases
+    )
     return df.drop(columns=["user_alias", "anonymous"], errors="ignore")
 
 
@@ -399,7 +434,7 @@ def download_activity_leaderboard(
         metric_prefix=metric_prefix,
         for_download=True,
     )
-    df = hide_username_for_anonymous_entries(df)
+    df = hide_username_for_anonymous_entries(df, escape_html=False)
     df = _rename_display_columns(df)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".csv", prefix=f"{track}_leaderboard_", delete=False
@@ -431,7 +466,7 @@ def download_structure_leaderboard(
             df.to_csv(f, index=False)
             return f.name
     df = _prepare_structure_df(df, for_download=True)
-    df = hide_username_for_anonymous_entries(df)
+    df = hide_username_for_anonymous_entries(df, escape_html=False)
     df = _rename_display_columns(df)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".csv", prefix="structure_leaderboard_", delete=False
