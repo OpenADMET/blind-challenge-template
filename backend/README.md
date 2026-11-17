@@ -35,11 +35,11 @@ This keeps dependencies and code identical across evaluators while preserving di
 - `config.py`: Challenge constants, dataset sizes, metrics, and **dataclass-based S3 path helpers**. Defines:
   - `TrackPaths`: Dataclass for S3 path management per track, with properties for all S3 prefixes (submissions, manifest, scores, leaderboards). `REGRESSION_PATHS`, `CLASSIFICATION_PATHS`, and `STRUCTURE_PATHS` are three fully independent tracks, each with its own submission-upload prefix, Lambda, and scoring/leaderboard pipeline. Each `TrackPaths` wraps the track's `TrackSpec` (endpoints, metrics, ranking, dataset size); regression and classification share the `activity` dataset (`activity-dataset.parquet`, `activity-identifiers.parquet`). `CLASSIFICATION_SPEC.endpoints` may be empty (e.g. before that track launches) — every place that consumes it degrades to a no-op rather than erroring.
   - `SubmissionKey`: Dataclass for parsing and validating S3 submission keys, with helpers for key/prefix validation and track/file matching.
-  - All constants (dataset sizes, metrics, deadlines, etc.) and leaderboard sort keys (now strings, not lists).
+  - The challenge constants (deadlines, dataset sizes, metric functions, bootstrap settings), grouped by section.
 - `leaderboard.py`: Modular leaderboard system using dataclasses:
   - `EntryMetric`, `LeaderboardEntry`, `EntryComparison`, `FinalLeaderboard`.
-  - Supports pairwise statistical comparisons and Compact Letter Display (CLD) for significance grouping.
-  - Generates leaderboard DataFrames sorted by primary metric and submission time, with optional CLD columns.
+  - Supports pairwise statistical comparisons, grouped into significance tiers (the default) or a Compact Letter Display (CLD).
+  - Generates leaderboard DataFrames sorted by primary metric and submission time, with optional significance columns.
 - `aws_submission_processing.py`: Validates and scores incoming submissions, saving score files to S3.
 - `aws_manifest.py`: Aggregates validated submission metadata into a per-track manifest.
 - `aws_leaderboards.py`: Builds and saves ranked leaderboards from manifest + score data, batch-loaded via DuckDB. `create_track_leaderboards` builds one leaderboard per endpoint, plus a macro-ranked master (`MACRO_ENDPOINT_LABEL`, "MA") when a track has more than one endpoint; significance testing and invalid-submission filtering apply only to that master, and only for "interim"/"final" stages. A track with zero endpoints (e.g. `CLASSIFICATION_SPEC.endpoints = []`) returns `{}` immediately rather than building anything. `build_track_leaderboards` does the same but returns a `TrackLeaderboards` that also carries the manifest and the master board's pairwise comparisons, for the head-to-head release.
@@ -47,7 +47,7 @@ This keeps dependencies and code identical across evaluators while preserving di
 - `submission_validation.py`: Pandera validation for regression/classification files and zip checks for structure files.
 - `evaluate_predictions.py`: Bootstrap scoring + aggregation helpers.
 - `ligand_bonds.py`: Gives structure-track ligands the bonds of their ground-truth SMILES (from `structure-identifiers.parquet`) instead of bonds guessed from atom distances, for OST and PoseBusters. See [docs/structure-scoring.md](../docs/structure-scoring.md).
-- `utils.py`: Phase determination + utility transforms/sampling.
+- `utils.py`: Bootstrap sampling, the log transform, model report link checks and username normalisation.
 - `discord_bot.py`: Posts submission results to Discord via webhook.
 - `cli.py`: Local validation CLI (`python -m backend.cli ...`).
 - `lambda_handler_regression.py`: S3-triggered handler for regression prediction evaluation.
@@ -64,7 +64,7 @@ This keeps dependencies and code identical across evaluators while preserving di
 Input: a dataframe loaded from `.parquet` or `.csv` with:
 
 - Identifier columns: `SMILES`, `Molecule_Name`
-- Regression endpoint columns (from `config.REGRESSION_ENDPOINTS`): `ENDPOINT_1`, `ENDPOINT_2`, `ENDPOINT_3`, `ENDPOINT_4` (template default — set to this challenge's real names)
+- Regression endpoint columns (from `config.REGRESSION_SPEC.endpoints`): `ENDPOINT_1`, `ENDPOINT_2`, `ENDPOINT_3`, `ENDPOINT_4` (template default — set to this challenge's real names)
 - Exact row count: `ACTIVITY_DATASET_SIZE` — regression and classification submissions cover the same underlying compound set, so both share this constant
 
 Validation checks:
@@ -80,7 +80,7 @@ Entry point: `validate_regression_submission()`.
 Input: a dataframe loaded from `.parquet` or `.csv` with:
 
 - Identifier columns: `SMILES`, `Molecule_Name`
-- Classification endpoint columns (from `config.CLASSIFICATION_ENDPOINTS`): `ENDPOINT_5`, `ENDPOINT_6` (template default) — may be an empty list (e.g. before that track launches)
+- Classification endpoint columns (from `config.CLASSIFICATION_SPEC.endpoints`): `ENDPOINT_5`, `ENDPOINT_6` (template default) — may be an empty list (e.g. before that track launches)
 - Exact row count: `ACTIVITY_DATASET_SIZE`
 
 Validation checks:
@@ -114,8 +114,8 @@ full diagram — this is a summary.
 Regression and classification are **two independent submission tracks**, each with
 its own upload, validation, Lambda, and metric set:
 
-- Regression (from `config.ACTIVITY_METRICS`): `ST-RAE`, `MAE`, `R2`, `Spearman_R`, `Kendall_Tau`
-- Classification (from `config.CLASSIFICATION_METRICS`): `MCC`, `Accuracy`, `Precision`, `Recall`, `F1`
+- Regression (from `config.REGRESSION_SPEC.metrics`): `ST-RAE`, `MAE`, `R2`, `Spearman_R`, `Kendall_Tau`
+- Classification (from `config.CLASSIFICATION_SPEC.metrics`): `MCC`, `Accuracy`, `Precision`, `Recall`, `F1`
 
 Scoring flow (identical shape for both tracks, differing only in `endpoints`/`metrics`):
 
@@ -155,16 +155,16 @@ Submission S3 keys are parsed and validated using the `SubmissionKey` dataclass,
 - **Score loading**: Batch loads all required `averaged-results.parquet` and `bootstrap-results.parquet` files for leaderboard generation using DuckDB and S3 `httpfs`.
 - **Leaderboard generation**: Uses the modular `FinalLeaderboard` class in `leaderboard.py` to:
   - Sort by the primary metric (as a string, e.g. `ST-RAE` or `LDDT-PLI`) and submission time.
-  - Optionally perform pairwise statistical comparisons and generate Compact Letter Display (CLD) columns for significance grouping.
-  - Output a DataFrame with all metrics, user info, and optional CLD.
+  - Optionally perform pairwise statistical comparisons and group entries into significance tiers (or CLD letters).
+  - Output a DataFrame with all metrics, user info, and the optional significance column.
 - **One leaderboard per endpoint, plus a master**: `aws_leaderboards.create_track_leaderboards(track_paths, stage, ...)` builds one leaderboard per `track_paths.endpoints` entry, plus an additional macro-ranked master (`endpoint=MACRO_ENDPOINT_LABEL`, "MA") whenever a track has more than one endpoint — a single-endpoint track like structure just gets its one leaderboard, which also doubles as the "master" for significance-testing purposes. Every variant is saved under its own `{endpoint_slug}_leaderboard_{version}.csv` filename via `save_leaderboard(..., endpoint_slug=...)`.
 - **`stage` derives significance testing and filtering internally** (not passed by the caller):
   - `stage="live"`: no significance testing, no invalid-submission filtering — kept cheap since it's auto-generated on a schedule and always reflects every submission so far.
-  - `stage="interim"`: significance testing (`significant_method`, default `"CLD"`) on the master leaderboard only; no invalid-submission filtering.
+  - `stage="interim"`: significance testing (`significant_method`, default `"tiers"`) on the master leaderboard only; no invalid-submission filtering.
   - `stage="final"`: significance testing on the master leaderboard only; with `REQUIRE_MODEL_REPORT`, submissions without a reachable model report link are removed.
   - Significance testing never runs on the individual per-endpoint leaderboards of a multi-endpoint track — only on the master (or the one leaderboard of a single-endpoint track).
 - **Live leaderboard**: Saved to S3 using `save_live_leaderboard()`/`save_leaderboard(..., stage="live")`, always overwriting `{endpoint_slug}_leaderboard_latest.csv`. Auto-generated by the leaderboard Lambda.
-- **Interim/final leaderboards**: Generated manually (not by a scheduled Lambda) via `create_track_leaderboards(stage="interim" | "final")`, differing in the submission cutoff (`INTERIM_LEADERBOARD_DEADLINE` vs. `FINAL_LEADERBOARD_DEADLINE`) and, for "final", invalid-submission removal (see above).
+- **Interim/final leaderboards**: Generated by the organisers (not by a scheduled Lambda) with `scripts/interim_leaderboard.ipynb` and `scripts/final_leaderboard.ipynb`, which build, check and upload them (see [scripts/README.md](../scripts/README.md)). The two stages differ in the submission cutoff (`INTERIM_LEADERBOARD_DEADLINE` vs. `FINAL_LEADERBOARD_DEADLINE`) and, for "final", invalid-submission removal (see above).
 
 ### Entries List (Every Track)
 
@@ -184,13 +184,13 @@ rather than ranking:
 - Leaderboard: `leaderboard/{live,interim,final}/{track}/{endpoint_slug}_leaderboard_latest.csv` — `{endpoint_slug}` is `MA` for the master (multi-endpoint tracks only), `structure` for the structure track's one leaderboard, one of the regression endpoints (e.g. `ENDPOINT_1`) for `track="regression"`, or one of the classification endpoints (e.g. `ENDPOINT_5`) for `track="classification"`
 - Entries list (every track combined): `entries/all_entries_latest.csv`
 
-All S3 paths are constructed using the `TrackPaths` dataclass helpers (including `.all_entries` for the entries list — the same prefix for every track, since the list spans all of them), not by string concatenation.
+Per-track S3 paths come from the `TrackPaths` dataclass helpers; the prefixes shared by every track are `GROUND_TRUTH_PREFIX` and `ENTRIES_PREFIX`.
 
 
 ## Leaderboard Features
 
-- **Pairwise significance testing**: The leaderboard system supports pairwise statistical comparisons between submissions using bootstrap samples, with Holm-Bonferroni correction for multiple testing.
-- **Compact Letter Display (CLD)**: Optionally generates CLD columns to indicate statistically indistinguishable groups.
+- **Pairwise significance testing**: Pairwise comparisons between submissions use their bootstrap samples, with Benjamini-Hochberg correction for multiple testing.
+- **Significance tiers**: Entries are grouped into tiers of statistically indistinguishable results (or, optionally, a Compact Letter Display).
 - **Dataclass-based entries**: All leaderboard rows are constructed from `LeaderboardEntry` dataclasses, which parse and store all metric and user info.
 
 ### `lambda_handler_regression.handler(event, context)`
@@ -198,13 +198,13 @@ All S3 paths are constructed using the `TrackPaths` dataclass helpers (including
 Expected event detail:
 
 - `event["detail"]["file_path"]` or `event["detail"]["object"]["key"]` path shaped like:
-  - `submissions/regression/{user_id}/{submission_uuid}/predictions.parquet`
+  - `submissions/regression/{user_id}/{submission_id}/predictions.parquet`
   - or `.csv`
 
 Behavior:
 
 - validates path structure
-- extracts `user_id` and `submission_uuid`
+- extracts `user_id` and `submission_id`
 - calls `process_new_regression_submission(...)`
 
 ### `lambda_handler_classification.handler(event, context)`
@@ -212,13 +212,13 @@ Behavior:
 Expected event detail (same shape as regression):
 
 - `event["detail"]["file_path"]` or `event["detail"]["object"]["key"]` path shaped like:
-  - `submissions/classification/{user_id}/{submission_uuid}/predictions.parquet`
+  - `submissions/classification/{user_id}/{submission_id}/predictions.parquet`
   - or `.csv`
 
 Behavior:
 
 - validates path structure
-- extracts `user_id` and `submission_uuid`
+- extracts `user_id` and `submission_id`
 - calls `process_new_classification_submission(...)`
 
 ### `lambda_handler_structure.handler(event, context)`
@@ -226,12 +226,12 @@ Behavior:
 Expected event detail (same shape as regression/classification):
 
 - `event["detail"]["file_path"]` or `event["detail"]["object"]["key"]` path shaped like:
-  - `submissions/structure/{user_id}/{submission_uuid}/structures.zip`
+  - `submissions/structure/{user_id}/{submission_id}/structures.zip`
 
 Behavior:
 
 - validates path structure
-- extracts `user_id` and `submission_uuid`
+- extracts `user_id` and `submission_id`
 - calls `process_new_structure_submission(...)`
 
 ### `lambda_handler_entries.handler(event, context)`
@@ -285,7 +285,6 @@ Rules:
 - All constants (dataset sizes, metrics, deadlines, etc.) are defined in `config.py`.
 - `S3_BUCKET` is configured via the `S3_BUCKET` environment variable (default: `"blind-challenge-template"`).
 - Discord notifications are controlled by the `DISCORD_NOTIFICATIONS` environment variable (default: enabled).
-- Leaderboard sort keys are now strings (e.g. `ST-RAE`, `LDDT-PLI`), not lists.
 
 
 ## Known TODOs

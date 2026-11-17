@@ -86,12 +86,10 @@ def fetch_submission_metadata(sk: SubmissionKey) -> dict:
 def save_validated_submission_metadata(
     sk: SubmissionKey, metadata: pd.DataFrame, track_paths: TrackPaths
 ) -> None:
-    """Save the metadata of a validated submission to S3.
+    """Save a validated submission's manifest row to S3.
 
-    The metadata is saved in a manifest directory with the filename format:
-        "{user_id}_{submission_uuid}.parquet"
-    to allow for easy querying of the latest submission from each user when creating
-    the leaderboards.
+    Written to ``{track_paths.manifest}/{user_id}_{submission_id}.parquet``, one file
+    per submission; the leaderboards read the latest per user.
 
     Parameters
     ----------
@@ -101,12 +99,7 @@ def save_validated_submission_metadata(
     metadata : pd.DataFrame
         The metadata to save for the validated submission.
     track_paths : TrackPaths
-        Which track's manifest to write to — e.g.
-        ``REGRESSION_PATHS``/``CLASSIFICATION_PATHS`` for an activity submission
-        (one submission writes a manifest row per track), or ``STRUCTURE_PATHS``.
-        Not necessarily the same track as ``sk.track``: an activity submission's
-        ``sk.track`` is always "activity" (the single upload prefix), but its
-        scores/manifest rows are written per scoring track.
+        The submission's track.
 
     Returns
     -------

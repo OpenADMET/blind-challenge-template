@@ -148,8 +148,6 @@ def save_all_entries_list(entries_df: pd.DataFrame) -> str:
         The S3 path of the saved "latest" file.
 
     """
-    # ``all_entries`` is the same for every track — this list spans both tracks, so
-    # which TrackPaths instance it's read from doesn't matter.
     namespace = f"s3://{S3_BUCKET}/{ENTRIES_PREFIX}"
     wr.s3.to_csv(
         df=entries_df,

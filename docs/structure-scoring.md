@@ -49,10 +49,10 @@ flowchart TD
     end
 
     subgraph S3["3 · Per-set aggregation — aggregate_structure_scores(), once per compound set<br/>bootstrap_structure_metrics()"]
-        PERCOMPOUNDDF --> PHASE["Keep the set's compounds<br/>(all, or identifiers' set == live / hidden)"]
-        PHASE --> RESAMPLE["Resample compounds (rows) with replacement<br/>1000 iterations"]
+        PERCOMPOUNDDF --> KEEPSET["Keep the set's compounds<br/>(all, or identifiers' set == live / hidden)"]
+        KEEPSET --> RESAMPLE["Resample compounds (rows) with replacement<br/>B = BOOTSTRAP_SAMPLES iterations"]
         RESAMPLE --> MEAN["Per sample: plain mean of each metric<br/>across the resampled compounds<br/>(not a regression metric function, unlike activity)"]
-        MEAN --> BOOTDF[("bootstrap-results.parquet<br/>1000 rows, Endpoint='Structure' always<br/>same Sample/Endpoint schema as activity")]
+        MEAN --> BOOTDF[("bootstrap-results.parquet<br/>B rows, Endpoint='structure' always<br/>same Sample/Endpoint schema as activity")]
     end
 
     BOOTDF --> BYEP["average_bootstrap_results_by_endpoint()<br/>mean &amp; std over the B samples<br/>(shared helper, reused from activity)"]
@@ -61,7 +61,7 @@ flowchart TD
     COVMEAN --> PIVOT
     PIVOT --> WIDESAVE[("averaged-results.parquet")]
 
-    WIDESAVE --> LB["create_track_leaderboards()<br/>one leaderboard, ranked by LDDT-PLI descending<br/>(no macro-average — only one endpoint, 'Structure')"]
+    WIDESAVE --> LB["create_track_leaderboards()<br/>one leaderboard, ranked by LDDT-PLI descending<br/>(no macro-average — only one endpoint, 'structure')"]
 ```
 
 ## Submission-level QA (not per-compound scoring — `process_new_structure_submission`)

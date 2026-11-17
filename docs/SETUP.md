@@ -87,7 +87,7 @@ The challenge repo stores all code and drives CI/CD. On pushes/merges to `main`,
 
 5. **Update `hf_space/`** for your challenge — mainly `config.py` and `README.md` (endpoint definitions, links including `DISCORD_LINK`, deadlines and page content). The deadlines must match `backend/config.py` (the drift test checks); the Space uses them for the status line under the header and, when `REQUIRE_MODEL_REPORT` is on, a model report reminder in the last `MODEL_REPORT_REMINDER_DAYS` before submissions close. Both update with the date, without restarting the Space. Set the Space's colours and font with the `THEME_*` settings (a Gradio colour name or a hex colour each). Add the logo at `LOGO_PATH` (default `hf_space/_static/challenge_logo.png`; not shipped in the template — Git LFS pointers break when the `.git` dir is reinitialised); the header shows it once the file exists.
 
-   **Sign-in with Hugging Face.** Submissions come from the logged-in Hugging Face account: `hf_space/README.md` sets `hf_oauth: true`, and HF then provides the OAuth settings to the Space itself (no secrets to add). Accounts younger than `MIN_ACCOUNT_AGE_DAYS` (default 1) can't submit, and participants can't submit through the API. Organisers submit baselines the same way, logged in to an organiser's account. To run the Space locally (`cd hf_space && python app.py`), log in to Hugging Face on that machine first (`hf auth login`): outside a Space, Gradio's login button signs you in as that account.
+   **Sign-in with Hugging Face.** Submissions come from the logged-in Hugging Face account: `hf_space/README.md` sets `hf_oauth: true`, and HF then provides the OAuth settings to the Space itself (no secrets to add). Accounts younger than `MIN_ACCOUNT_AGE_DAYS` (default 1) can't submit. Submissions are made on the Space's Submit tab; programmatic submission isn't supported. Organisers submit baselines the same way, logged in to an organiser's account. To run the Space locally (`cd hf_space && python app.py`), log in to Hugging Face on that machine first (`hf auth login`): outside a Space, Gradio's login button signs you in as that account.
 
 6. **Update `backend/`, `tests/`, and `README.md`** as needed. Work through every `TODO` (see the repo README for the Todo Tree tip), then run `pytest tests/backend/`.
 
@@ -121,7 +121,7 @@ The challenge repo stores all code and drives CI/CD. On pushes/merges to `main`,
     Edit, don't delete:
 
     - `README.md` — rewrite for your challenge (step 6).
-    - `docs/SETUP.md` — remove the "Internal (OpenADMET)" note near the top; the rest is a useful reference.
+    - `docs/SETUP.md` — a useful reference; trim what doesn't apply to your organisation.
     - `environment.yml` — change `name: blind-challenge-template` to your challenge slug.
     - `.github/ISSUE_TEMPLATE/config.yml` — repoint the Discussions / security URLs at your repo (or delete for plain issue templates).
 
@@ -133,7 +133,7 @@ The challenge repo stores all code and drives CI/CD. On pushes/merges to `main`,
    git commit -m "initial commit"
    ```
 
-14. Push to GitHub. Four workflows run: the naming guardrail, backend unit tests, OpenTofu apply (AWS), and the HF Space deploy (fails until the Space exists).
+14. Push to GitHub. Five workflows run: the naming guardrail, the backend and Space checks, OpenTofu apply (AWS), and the HF Space deploy (fails until the Space exists).
 
 ## Setting up the AWS backend
 
@@ -241,7 +241,7 @@ aws s3 cp "structure-dataset.zip"        "s3://${BUCKET}/${PREFIX}/structure-dat
 aws s3 cp "structure-identifiers.parquet" "s3://${BUCKET}/${PREFIX}/structure-identifiers.parquet" --only-show-errors
 ```
 
-Both identifiers files need `Molecule_Name` and `set` columns; `set` is `live` or `hidden` (see [phases-and-stages.md](phases-and-stages.md) for which leaderboard ranks on which set). Also give `structure-identifiers.parquet` a `SMILES` column with each ligand's ground-truth SMILES: scoring then takes the ligand bonds from it rather than guessing them from atom distances, which makes compounds with strained rings unscoreable and causes false PoseBusters failures (see [structure-scoring.md](structure-scoring.md)). Without it, scoring still works, as before.
+Both identifiers files need `Molecule_Name` and `set` columns; `set` is `live` or `hidden` (see [phases-and-stages.md](phases-and-stages.md) for which leaderboard ranks on which set). Also give `structure-identifiers.parquet` a `SMILES` column with each ligand's ground-truth SMILES: scoring then takes the ligand bonds from it rather than guessing them from atom distances, which makes compounds with strained rings unscoreable and causes false PoseBusters failures (see [structure-scoring.md](structure-scoring.md)). Without it, scoring still works, with bonds guessed from atom distances.
 
 ### Step 3: Create the GitHub Actions deploy role, set GitHub secrets
 

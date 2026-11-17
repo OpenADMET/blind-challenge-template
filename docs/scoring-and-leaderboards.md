@@ -31,7 +31,7 @@ flowchart TD
         GT --> RMERGE
         RMERGE --> RLOOP["For each of the 4 regression endpoints<br/>(compounds with no ground truth for that<br/>endpoint are excluded before scoring)"]
         RLOOP --> RMETRICS["REGRESSION_SPEC.metrics:<br/>ST-RAE · MAE · R2 · Spearman_R · Kendall_Tau<br/>(ST-RAE also receives that endpoint's<br/>_conf_high/_conf_low credible-interval bounds)"]
-        RMETRICS --> RBOOT["Bootstrap resample, 1000 iterations<br/>(same sample indices shared across all endpoints<br/>of a given pool size)"]
+        RMETRICS --> RBOOT["Bootstrap resample, B = BOOTSTRAP_SAMPLES iterations<br/>(same sample indices shared across all endpoints<br/>of a given pool size)"]
         RBOOT --> RRAW[("Raw bootstrap table<br/>4 endpoints x B samples")]
     end
 
@@ -41,7 +41,7 @@ flowchart TD
         CPRED --> CMERGE
         CMERGE --> CLOOP["For each of the 2 classification endpoints<br/>(compounds with no ground truth for that<br/>endpoint are excluded before scoring)"]
         CLOOP --> CMETRICS["CLASSIFICATION_SPEC.metrics:<br/>MCC · Accuracy · Precision · Recall · F1"]
-        CMETRICS --> CBOOT["Bootstrap resample, 1000 iterations"]
+        CMETRICS --> CBOOT["Bootstrap resample, B = BOOTSTRAP_SAMPLES iterations"]
         CBOOT --> CRAW[("Raw bootstrap table<br/>2 endpoints x B samples")]
     end
 
@@ -128,8 +128,8 @@ flowchart TD
   `score_activity_predictions` raises `ValueError` too as a second line of defence.
 - **Bootstrap indices are shared across endpoints wherever their pool sizes match.**
   `bootstrap_sampling()` is cached by `(dataset_size, n_samples)`, so every endpoint
-  with the same number of ground-truth-eligible compounds reuses the exact same 1000
-  resamples for a given submission — this is what makes it valid to combine those
+  with the same number of ground-truth-eligible compounds reuses the exact same
+  `BOOTSTRAP_SAMPLES` resamples for a given submission — this is what makes it valid to combine those
   endpoints sample-by-sample when macro-averaging.
 - **The "MA" pseudo-endpoint is not a real endpoint** — it's a derived row computed
   *within* each bootstrap sample from that track's other endpoints, then appended so
@@ -217,5 +217,5 @@ The Space reads each leaderboard CSV from S3 and shows it as a table:
 | 3. Average by endpoint + flatten (once per track) | `average_bootstrap_results_by_endpoint`, `pivot_endpoint_results_wide` | `backend/evaluate_predictions.py` |
 | Per-track pipeline: fetch, validate, score, save, manifest | `process_new_regression_submission`, `process_new_classification_submission`, `score_regression_submission`, `score_classification_submission` | `backend/aws_submission_processing.py` |
 | 4. Narrow to one endpoint + rank | `create_track_leaderboards`, `_narrow_averaged_results_to_endpoint` | `backend/aws_leaderboards.py` |
-| Ranking, CLD significance | `FinalLeaderboard`, `EntryComparison` | `backend/leaderboard.py` |
+| Ranking, significance tiers / CLD | `FinalLeaderboard`, `EntryComparison` | `backend/leaderboard.py` |
 | Showing it in the Space | `load_leaderboard`; `LeaderboardTable`, `render_leaderboard_table` | `hf_space/leaderboards.py`; `hf_space/leaderboard_table.py` |

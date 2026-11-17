@@ -32,11 +32,12 @@ The quickest way to see every fill-in point at once is the [**Todo Tree**](https
 | Path | Contents |
 |------|----------|
 | [`backend/`](backend/README.md) | Submission validation, bootstrapped scoring, leaderboard generation, and the AWS Lambda handlers |
-| [`hf_space/`](hf_space/README.md) | The Gradio app (submission form, leaderboards) deployed to the HF Space |
+| [`hf_space/`](hf_space/README.md) | The Gradio app (submission form, leaderboards, head-to-head) deployed to the HF Space |
+| [`scripts/`](scripts/README.md) | Organiser scripts: interim and final leaderboard notebooks, quarantine, bans |
 | [`opentofu/`](opentofu/README.md) | OpenTofu config provisioning all AWS resources (S3, Lambda, EventBridge, IAM, ECR, Secrets Manager) |
 | [`docs/`](docs/scoring-and-leaderboards.md) | Design docs — scoring/leaderboard pipeline diagrams, phase/stage disambiguation, etc. |
-| `tests/backend/` | Backend unit tests (pytest) |
-| `.github/workflows/` | CI: `backend-tests.yml` (lint/type-check/docstring-check/pytest for `backend/`) and `hf-space-checks.yml` (the same checks for `hf_space/`) run here; the deploy-on-push workflows for the backend/infra and the HF Space live in `.github/workflows.disabled/` until you stand up a challenge |
+| `tests/` | Unit tests (pytest) for `backend/`, `hf_space/` and `scripts/` |
+| `.github/workflows/` | CI: `backend-tests.yml` (lint/type-check/docstring-check/pytest for `backend/` and `scripts/`) and `hf-space-checks.yml` (the same checks for `hf_space/`) run here; the deploy-on-push workflows for the backend/infra and the HF Space live in `.github/workflows.disabled/` until you stand up a challenge |
 
 ---
 
@@ -60,14 +61,14 @@ The quickest way to see every fill-in point at once is the [**Todo Tree**](https
 conda env create -f environment.yml
 conda activate blind-challenge-template
 
-# Run backend tests
-pytest tests/backend/
+# Run the backend and scripts tests
+pytest tests/backend/ tests/scripts/
 
 # Validate a submission file locally
 python -m backend.cli --regression-predictions path/to/predictions.parquet
 ```
 
-See [backend/README.md](backend/README.md) for validation rules, scoring behavior, and the full CLI reference.
+See [backend/README.md](backend/README.md) for validation rules, scoring behavior, and the full CLI reference. The Space has its own requirements and tests; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -99,7 +100,7 @@ Push to hf_testing
      repo variable  [uses HF_TOKEN; job skipped if the variable is unset]
 ```
 
-Two workflows are active in the template itself, both on every push and PR to `main` (and `hf_testing`), plus manual dispatch: `.github/workflows/backend-tests.yml` (ruff/mypy/pydoclint, then pytest) on changes to `backend/`, `tests/`, `environment.yml`, `pytest.ini`, or `pyproject.toml`; and `.github/workflows/hf-space-checks.yml` (the same ruff/mypy/pydoclint checks, no test suite) on changes to `hf_space/` or `pyproject.toml`.
+Two workflows are active in the template itself, on pushes and PRs to `main` and `hf_testing`, plus manual dispatch: `.github/workflows/backend-tests.yml` (ruff/mypy/pydoclint, then pytest, for `backend/` and `scripts/`) on every push; and `.github/workflows/hf-space-checks.yml` (the same checks and pytest for `hf_space/`) on changes to `hf_space/`, `tests/hf_space/`, `pyproject.toml` or `pytest.ini`.
 
 ### Required GitHub Actions Secrets (`.github/workflows/deploy.yml`, `deploy-hf-space.yml`)
 
